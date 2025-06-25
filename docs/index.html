@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="0; url=https://nalbam.github.io/games/flappy-bat/">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting to Games...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .redirect-message {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+        }
+        
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+        }
+        
+        .redirect-link {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: background 0.3s ease;
+        }
+        
+        .redirect-link:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="redirect-message">
+        <h1>🦇 Flappy Bat</h1>
+        <p>게임이 새로운 위치로 이동했습니다!</p>
+        <p>자동으로 리디렉션됩니다...</p>
+        <a href="https://nalbam.github.io/games/flappy-bat/" class="redirect-link">🎮 Flappy Bat으로 이동</a>
+    </div>
+    
+    <script>
+        // 자바스크립트 백업 리디렉션 (meta refresh가 실패할 경우)
+        setTimeout(function() {
+            window.location.href = 'https://nalbam.github.io/games/flappy-bat/';
+        }, 3000);
+    </script>
+</body>
+</html>
