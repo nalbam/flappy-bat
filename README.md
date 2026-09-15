@@ -14,9 +14,9 @@ python3 -m http.server 8000
 
 ## 조작
 
-- 클릭 / 탭 / `Space`: 박쥐 날갯짓
+- 클릭 / 탭 / `Space` / `ArrowUp`: 박쥐 날갯짓
 - 충돌하면 자동으로 게임 오버가 되며 `다시 시작` 버튼으로 재시작
-- 점수와 최고 점수는 브라우저 `localStorage`에 저장됩니다.
+- 현재 점수는 비행마다 초기화되며, 최고 점수만 브라우저 `localStorage`에 저장됩니다.
 
 ## GitHub Pages 배포
 

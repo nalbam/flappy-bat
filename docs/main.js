@@ -35,7 +35,6 @@
   const batMat = new THREE.MeshStandardMaterial({ color:0x332332, roughness:.75, flatShading:true });
   const batWingMat = new THREE.MeshStandardMaterial({ color:0x734454, roughness:.84, side:THREE.DoubleSide, flatShading:true });
   const eyeMat = new THREE.MeshBasicMaterial({ color:0xf5ae67 });
-  const dustMat = new THREE.MeshBasicMaterial({ color:0xc18f75, transparent:true, opacity:.42 });
 
   function makeBat() {
     const root = new THREE.Group(); root.position.set(0, 2.2, 0);
@@ -84,18 +83,21 @@
   const obstacles=Array.from({length:9},(_,i)=>makeObstacle(i));
 
   const particleGeo = new THREE.IcosahedronGeometry(.045,0);
+  const dustColor = new THREE.Color(0xc18f75);
   const particles=[];
-  for(let i=0;i<MAX_PARTICLES;i++){ const m=new THREE.Mesh(particleGeo,dustMat); m.visible=false; scene.add(m); particles.push({mesh:m,life:0,vel:new THREE.Vector3(),gravity:-2}); }
-  function burst(pos,count,color,force=.8){ for(let k=0;k<count;k++){ const p=particles.find(x=>!x.mesh.visible); if(!p) break; p.mesh.material=color ? new THREE.MeshBasicMaterial({color,transparent:true,opacity:.8}) : dustMat; p.mesh.visible=true; p.life=rand(.35,1.2); p.mesh.scale.setScalar(rand(.5,1.8)); p.mesh.position.copy(pos); p.vel.set(rand(-1,1),rand(-.1,1.4),rand(-1,1)).normalize().multiplyScalar(rand(.2,force)); } }
-  function dustTrail(){ const p=particles.find(x=>!x.mesh.visible); if(!p) return; p.mesh.material=dustMat;p.mesh.visible=true;p.life=rand(.7,1.8);p.mesh.position.set(rand(-4,4),rand(-2,6),rand(-35,4));p.vel.set(0,rand(-.1,.1),rand(.3,.8));p.gravity=0; }
+  for(let i=0;i<MAX_PARTICLES;i++){ const material=new THREE.MeshBasicMaterial({color:dustColor,transparent:true,opacity:0}); const m=new THREE.Mesh(particleGeo,material); m.visible=false; scene.add(m); particles.push({mesh:m,life:0,vel:new THREE.Vector3(),gravity:-2}); }
+  function burst(pos,count,color,force=.8){ for(let k=0;k<count;k++){ const p=particles.find(x=>!x.mesh.visible); if(!p) break; p.mesh.material.color.set(color); p.mesh.material.opacity=.8; p.mesh.visible=true; p.life=rand(.35,1.2); p.gravity=-2; p.mesh.scale.setScalar(rand(.5,1.8)); p.mesh.position.copy(pos); p.vel.set(rand(-1,1),rand(-.1,1.4),rand(-1,1)).normalize().multiplyScalar(rand(.2,force)); } }
+  function dustTrail(){ const p=particles.find(x=>!x.mesh.visible); if(!p) return; p.mesh.material.color.copy(dustColor);p.mesh.material.opacity=.42;p.mesh.visible=true;p.life=rand(.7,1.8);p.gravity=0;p.mesh.position.set(rand(-4,4),rand(-2,6),rand(-35,4));p.vel.set(0,rand(-.1,.1),rand(.3,.8)); }
 
-  let state='ready', score=0, best=Number(localStorage.getItem('flappyBatBest')||0), velocity=0, elapsed=0, runTime=0, spawnZ=-26, shake=0, last=performance.now();
+  function readBestScore(){ try { const stored=Number(localStorage.getItem('flappyBatBest')); return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0; } catch (error) { return 0; } }
+  function writeBestScore(value){ try { localStorage.setItem('flappyBatBest',String(value)); } catch (error) { /* Keep the in-memory best score when storage is unavailable. */ } }
+  let state='ready', score=0, best=readBestScore(), velocity=0, elapsed=0, runTime=0, spawnZ=-26, shake=0, last=performance.now();
   bestEl.textContent=best;
   function resetObstacles(){ obstacles.forEach((o,i)=>{o.position.z=-18-i*19;o.userData.active=i<7;o.userData.passed=false;o.userData.gap=rand(-.7,1.8);o.userData.spin=rand(-.5,.5); o.position.y=o.userData.gap; }); }
   resetObstacles();
   function setReady(){ state='ready'; score=0;scoreEl.textContent='0';velocity=0;runTime=0;bat.position.set(0,2.2,0);overlay.classList.remove('hidden');overlay.classList.add('ready');message.innerHTML='동굴 사이를 날아<br />최고 점수를 기록하세요.';startButton.innerHTML='날아오르기 <span>SPACE</span>';restartButton.classList.remove('visible');touchHint.classList.remove('off');resetObstacles(); }
   function start(){ if(state==='running') return; state='running';overlay.classList.add('hidden');restartButton.classList.remove('visible');touchHint.classList.add('off'); velocity=2.25; }
-  function gameOver(){ if(state!=='running') return; state='over'; shake=.62; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); if(score>best){best=score;localStorage.setItem('flappyBatBest',String(best));bestEl.textContent=best;} message.innerHTML=`비행 기록 <strong>${score}</strong><br />조금 더 멀리 날아볼까요?`;startButton.textContent='다시 날기';overlay.classList.remove('hidden');restartButton.classList.add('visible');touchHint.classList.add('off'); }
+  function gameOver(){ if(state!=='running') return; state='over'; shake=.62; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); if(score>best){best=score;writeBestScore(best);bestEl.textContent=best;} message.innerHTML=`비행 기록 <strong>${score}</strong><br />조금 더 멀리 날아볼까요?`;startButton.textContent='다시 날기';overlay.classList.remove('hidden');restartButton.classList.add('visible');touchHint.classList.add('off'); }
   function flap(){ if(state==='ready') start(); else if(state==='over'){setReady();start();} else velocity=5.1; }
   function updateBat(dt){ if(state==='ready'){bat.position.y=2.2+Math.sin(elapsed*2.1)*.12;} else if(state==='running'){velocity-=10.4*dt;bat.position.y+=velocity*dt; if(bat.position.y>5.5||bat.position.y<-.8) gameOver(); } else { velocity-=7*dt;bat.position.y+=velocity*dt; bat.rotation.z+=dt*2.5; }
     const pitch=clamp(velocity*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=state==='over'?0:Math.sin(elapsed*10)*.38 + (state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
