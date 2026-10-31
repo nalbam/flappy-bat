@@ -1,6 +1,8 @@
 /* Flappy Bat — procedural Three.js game, no build step required. */
 import { bindInput } from './input.mjs';
 import { frameView } from './view.mjs';
+import { BAT_START_Y, BAT_X } from './game-rules.mjs';
+import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-core.mjs';
 
 (() => {
   'use strict';
@@ -87,8 +89,9 @@ import { frameView } from './view.mjs';
     for(let i=0;i<3;i++){ const cap=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.18,.4),0),choose(rockMats)); cap.position.set(rand(-.55,.55),rand(-height/2,height/2),rand(-.35,.35)); cap.scale.y=rand(.6,1.8); group.add(cap); }
     return group;
   }
-  function makeObstacle(i) { const g=new THREE.Group(); g.userData.index=i; g.userData.active=false; g.add(pillarPart(4.2,3.7,rand(.1,.9)),pillarPart(4.2,-3.7,rand(.1,.9))); scene.add(g); return g; }
-  const obstacles=Array.from({length:9},(_,i)=>makeObstacle(i));
+  const PILLAR_HEIGHT = 4.2; // syncObstacles puts the inner end of each pillar on the model's gap edge
+  function makeObstacle() { const g=new THREE.Group(); g.add(pillarPart(PILLAR_HEIGHT,0,rand(.1,.9)),pillarPart(PILLAR_HEIGHT,0,rand(.1,.9))); scene.add(g); return g; }
+  const obstacles=Array.from({length:OBSTACLE_COUNT},()=>makeObstacle());
 
   const particleGeo = new THREE.IcosahedronGeometry(.045,0);
   const dustColor = new THREE.Color(0xc18f75);
@@ -99,33 +102,39 @@ import { frameView } from './view.mjs';
 
   function readBestScore(){ try { const stored=Number(localStorage.getItem('flappyBatBest')); return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0; } catch (error) { return 0; } }
   function writeBestScore(value){ try { localStorage.setItem('flappyBatBest',String(value)); } catch (error) { /* Keep the in-memory best score when storage is unavailable. */ } }
-  let state='ready', score=0, best=readBestScore(), velocity=0, elapsed=0, runTime=0, shake=0, last=performance.now();
+  // The model owns state, bat physics, score and obstacles; this file renders it and runs effects.
+  const game=createGame(), clock=createFrameClock();
+  let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, shownScore=0, scrolled=0;
   bestEl.textContent=best;
-  function resetObstacles(){ obstacles.forEach((o,i)=>{o.position.x=24+i*19;o.position.z=0;o.rotation.y=0;o.userData.active=i<7;o.userData.passed=false;o.userData.gap=rand(-.7,1.8); o.position.y=o.userData.gap; }); }
-  resetObstacles();
-  function setReady(){ state='ready'; score=0;scoreEl.textContent='0';velocity=0;runTime=0;bat.position.set(0,2.2,0);message.textContent='';showScreen('ready');resetObstacles(); }
-  function start(){ if(state==='running') return; state='running';showScreen('running'); velocity=2.25; }
-  function gameOver(){ if(state!=='running') return; state='over'; shake=.62; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); const record=score>best; if(record){best=score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
+  function showScore(){ if(game.score===shownScore) return; shownScore=game.score; scoreEl.textContent=shownScore; }
+  function syncObstacles(){ obstacles.forEach((o,i)=>{ const d=game.obstacles[i], offset=d.gapHeight/2+PILLAR_HEIGHT/2; o.position.set(d.x,d.gapY,0); o.children[0].position.y=offset; o.children[1].position.y=-offset; }); }
+  function clearEffects(){ shake=0; fallVelocity=0; bat.rotation.z=0; particles.forEach(p=>{p.life=0;p.mesh.visible=false;}); }
+  function setReady(){ game.reset(); clearEffects(); scrolled=0; showScore(); bat.position.set(BAT_X,BAT_START_Y,0);message.textContent='';showScreen('ready'); }
+  function start(){ if(!startRun(game,clock)) return; showScreen('running'); }
+  // Runs once when the model reports a crash: effects, best score and the over screen.
+  function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; bat.position.y=game.bat.y; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
   function restart(){ setReady(); start(); }
   // `ready` shows the start guide and `over` a compact crash result. While running, the overlay fades out
   // as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
   function showScreen(phase){ const running=phase==='running'; if(!running) overlay.dataset.phase=phase; overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
-  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span>`; }
-  function flap(){ if(state==='ready') start(); else if(state==='over'){setReady();start();} else velocity=5.1; }
-  function updateBat(dt){ if(state==='ready'){bat.position.y=2.2+Math.sin(elapsed*2.1)*.12;} else if(state==='running'){velocity-=10.4*dt;bat.position.y+=velocity*dt; if(bat.position.y>5.5||bat.position.y<-.8) gameOver(); } else { velocity-=7*dt;bat.position.y+=velocity*dt; bat.rotation.z+=dt*2.5; }
-    const pitch=clamp(velocity*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=state==='over'?0:Math.sin(elapsed*10)*.38 + (state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
-  function updateWorld(dt){ const speed=state==='running'?7.2+Math.min(runTime*.19,6):0; if(state==='running') runTime+=dt;
-    tunnel.forEach(g=>{g.position.x-=speed*dt;if(g.position.x<-16)g.position.x+=tunnel.length*8;});
-    if(state==='running') obstacles.forEach(o=>{o.position.x-=speed*dt; if(o.position.x<-16){o.position.x+=obstacles.length*19;o.position.y=rand(-.4,1.8);o.userData.gap=o.position.y;o.userData.passed=false;o.userData.active=true;} const dx=Math.abs(o.position.x-bat.position.x); const dy=Math.abs(bat.position.y-o.position.y); if(dx<1.05 && (dy>1.55)) gameOver(); if(!o.userData.passed&&o.position.x<bat.position.x){o.userData.passed=true;score++;scoreEl.textContent=score;} });
+  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span>`; }
+  function flap(){ if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else game.flap(); }
+  function updateBat(dt){ if(game.state==='ready'){bat.position.y=game.bat.y+Math.sin(elapsed*2.1)*.12;} else if(game.state==='running'){bat.position.y=game.bat.y;} else { fallVelocity-=7*dt;bat.position.y+=fallVelocity*dt; bat.rotation.z+=dt*2.5; }
+    const pitch=clamp((game.state==='over'?fallVelocity:game.bat.velocity)*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=game.state==='over'?0:Math.sin(elapsed*10)*.38 + (game.state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
+  function updateWorld(dt){ const moved=game.distance-scrolled; scrolled=game.distance;
+    tunnel.forEach(g=>{g.position.x-=moved;if(g.position.x<-16)g.position.x+=tunnel.length*8;});
+    syncObstacles();
     if(Math.random()<dt*10) dustTrail();
   }
   function updateParticles(dt){particles.forEach(p=>{if(!p.mesh.visible)return;p.life-=dt;if(p.life<=0){p.mesh.visible=false;return;}p.vel.y+=p.gravity*dt;p.mesh.position.addScaledVector(p.vel,dt);p.mesh.rotation.x+=dt*4;p.mesh.material.opacity=clamp(p.life,0,1)*.65;});}
-  function render(now){ const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt; updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
+  // The model consumes frame time in fixed ticks; effects use the same clamped frame time.
+  function render(now){ const dt=clock.frame(now);elapsed+=dt; const wasRunning=game.state==='running'; game.advance(dt); if(wasRunning&&game.state==='over') gameOver(); showScore(); updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
   // Fixed side view of the play plane: no height follow and no tilt, so gaps keep their screen height and pillars stay vertical.
   // The crash shake is a brief jitter (~.13 s half-life) and is off for reduced-motion users.
   function placeCamera(){ const s=reducedMotion.matches?0:shake*SHAKE_GAIN; camera.position.set(bat.position.x+view.x+Math.sin(elapsed*53)*s, view.y+Math.sin(elapsed*41+1)*s, view.distance); }
   function onResize(){ const aspect=innerWidth/innerHeight; view=frameView(aspect,CAM_FOV); camera.aspect=aspect; camera.updateProjectionMatrix(); scene.fog.density=FOG_DENSITY*FOG_REFERENCE_DISTANCE/view.distance; renderer.setPixelRatio(Math.min(devicePixelRatio,1.7)); renderer.setSize(innerWidth,innerHeight); placeCamera(); }
   bindInput({ win:window, doc:document, stage, onFlap:flap, buttons:[[startButton,flap],[restartButton,restart]] });
   addEventListener('resize',onResize); onResize();
+  document.addEventListener('visibilitychange',()=>clock.reset()); // hidden time is not simulated; the run resumes where it stopped
   requestAnimationFrame(render);
 })();
