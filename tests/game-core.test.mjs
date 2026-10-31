@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  BASE_SPEED, BAT_HALF_WIDTH, BAT_START_Y, BAT_X, CAVE_BOTTOM, FLAP_VELOCITY, MAX_FRAME_SECONDS,
-  MAX_SPEED_BONUS, TICK, TICK_RATE, speedAt,
+  BASE_SPEED, BAT_HALF_HEIGHT, BAT_START_Y, BAT_X, CAVE_FLOOR, FLAP_VELOCITY, MAX_FRAME_SECONDS,
+  MAX_SPEED_BONUS, TICK, TICK_RATE, bodyPitch, speedAt,
 } from '../docs/game-rules.mjs';
+import { bodyExtents } from '../docs/collision.mjs';
 import {
   FIRST_OBSTACLE_X, OBSTACLE_COUNT, OBSTACLE_RECYCLE_X, OBSTACLE_SPACING, START_GAP_RANGE,
   createFrameClock, createGame, startRun,
@@ -12,6 +13,8 @@ import {
 
 const EPS = 1e-9;
 const MAX_TICKS_PER_FRAME = Math.round(MAX_FRAME_SECONDS * TICK_RATE);
+// Half width of the body at its current tilt, the extent that must pass a pillar's back face.
+const bodyHalfWidth = (game) => bodyExtents(bodyPitch(game.bat.velocity)).halfWidth;
 
 // Deterministic PRNG (mulberry32) so obstacle gaps repeat between runs.
 function seeded(seed) {
@@ -53,7 +56,7 @@ function assertSameRun(actual, expected, label) {
 // Flaps when the bat drops below a height that keeps it inside the next gap.
 function autopilot(game, margin) {
   const next = game.obstacles.filter((o) => !o.passed).reduce((a, b) => (b.x < a.x ? b : a));
-  const target = Math.max(next.gapY - margin, CAVE_BOTTOM + 0.35);
+  const target = Math.max(next.gapY - margin, CAVE_FLOOR + BAT_HALF_HEIGHT + 0.35);
   if (game.bat.y < target && game.bat.velocity < 0) game.flap();
 }
 
@@ -83,7 +86,7 @@ test('ready and over do not advance the model or bank frame time', () => {
   game.flap();
   assert.equal(game.advance(TICK), 1, 'a new run does not catch up on time spent in ready');
 
-  game.bat.y = CAVE_BOTTOM - 1;
+  game.bat.y = CAVE_FLOOR - 1;
   game.step();
   assert.equal(game.state, 'over');
   const over = snapshot(game);
@@ -231,7 +234,7 @@ test('a start or restart simulates no frame time from before the start input', (
   assert.equal(startRun(game, clock), false, 'a running game does not start again');
 
   // A crash, over frames, then the restart input (setReady then start in main.js).
-  game.bat.y = CAVE_BOTTOM - 1;
+  game.bat.y = CAVE_FLOOR - 1;
   game.step();
   assert.equal(game.state, 'over');
   frame(1200);
@@ -242,7 +245,7 @@ test('a start or restart simulates no frame time from before the start input', (
   afterStart('restart', 1399);
 
   // Restart right after the crash frame, with no over frame in between.
-  game.bat.y = CAVE_BOTTOM - 1;
+  game.bat.y = CAVE_FLOOR - 1;
   frame(1500);
   assert.equal(game.state, 'over');
   game.reset();
@@ -254,7 +257,7 @@ test('an obstacle scores once, only after the whole body leaves its back face', 
   const game = createGame({ random: seeded(6) });
   game.flap();
   const obstacle = soloObstacle(game, 0.3, game.bat.y);
-  const behindBat = () => obstacle.x + obstacle.halfWidth <= game.bat.x - BAT_HALF_WIDTH;
+  const behindBat = () => obstacle.x + obstacle.halfWidth <= game.bat.x - bodyHalfWidth(game);
   let centrePassedWithoutPoint = false;
   while (game.score === 0) {
     assert.equal(behindBat(), false, 'no point while the body still overlaps the obstacle');
@@ -294,7 +297,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
   // Half a tick of travel before its back face passes the back of the bat.
   const clearing = (game) => {
     const step = speedAt(game.runTime) * TICK;
-    return soloObstacle(game, -(game.obstacles[0].halfWidth + BAT_HALF_WIDTH) + step / 2, game.bat.y);
+    return soloObstacle(game, -(game.obstacles[0].halfWidth + bodyHalfWidth(game)) + step / 2, game.bat.y);
   };
 
   const control = createGame({ random: seeded(7) });
@@ -308,7 +311,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
   // The cave floor ends the run in the tick the obstacle clears.
   const floor = createGame({ random: seeded(7) });
   floor.flap();
-  floor.bat.y = CAVE_BOTTOM + 0.001;
+  floor.bat.y = CAVE_FLOOR + BAT_HALF_HEIGHT + 0.001;
   floor.bat.velocity = -3;
   const cleared = clearing(floor);
   floor.step();
