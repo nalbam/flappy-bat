@@ -13,11 +13,12 @@
   const rand = (a, b) => a + Math.random() * (b - a);
   const choose = (a) => a[Math.floor(Math.random() * a.length)];
 
+  const CAM_X = 4; // camera is offset ahead of the bat so it sits in the left third
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x171116);
   scene.fog = new THREE.FogExp2(0x171116, 0.027);
   const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, .1, 130);
-  camera.position.set(0, 2.7, 8.5);
+  camera.position.set(CAM_X, 3.2, 11);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
   renderer.setSize(innerWidth, innerHeight);
@@ -31,13 +32,14 @@
   const moon = new THREE.DirectionalLight(0xaaa0c5, 1.4); moon.position.set(-8, 12, 4); scene.add(moon);
   const caveLight = new THREE.PointLight(0x743e36, 2.5, 21, 2); caveLight.position.set(0, -1, 2); scene.add(caveLight);
 
-  const rockMats = [0x403b3d, 0x51474a, 0x625052, 0x352f35, 0x6a5753].map((c, i) => new THREE.MeshStandardMaterial({ color:c, roughness:.96, metalness:.02, flatShading:true, emissive:i === 2 ? 0x100b0d : 0x000000, emissiveIntensity:.4 }));
+  const rockMats = [0x403b3d, 0x51474a, 0x625052, 0x352f35, 0x6a5753].map((c, i) => new THREE.MeshStandardMaterial({ color:c, roughness:.96, metalness:.02, flatShading:true, side:THREE.DoubleSide, emissive:i === 2 ? 0x100b0d : 0x000000, emissiveIntensity:.4 }));
   const batMat = new THREE.MeshStandardMaterial({ color:0x332332, roughness:.75, flatShading:true });
   const batWingMat = new THREE.MeshStandardMaterial({ color:0x734454, roughness:.84, side:THREE.DoubleSide, flatShading:true });
   const eyeMat = new THREE.MeshBasicMaterial({ color:0xf5ae67 });
 
   function makeBat() {
-    const root = new THREE.Group(); root.position.set(0, 2.2, 0);
+    const outer = new THREE.Group(); outer.position.set(0, 2.2, 0);
+    const root = new THREE.Group(); root.rotation.y = -Math.PI / 2; outer.add(root); // model faces -z; turn it to face +x
     const body = new THREE.Mesh(new THREE.IcosahedronGeometry(.43, 1), batMat); body.scale.set(.82, 1.2, 1); body.castShadow = true; root.add(body);
     const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.36, 1), batMat); head.position.set(0,.45,-.06); root.add(head);
     [-1, 1].forEach((s) => {
@@ -54,20 +56,21 @@
       for (let i=1;i<pts.length-1;i++) { const a=pts[0], b=pts[i]; const d=b.clone().sub(a); const bone=new THREE.Mesh(new THREE.CylinderGeometry(.025,.035,d.length,5), batMat); bone.position.copy(a).add(b).multiplyScalar(.5); bone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d.normalize()); bones.add(bone); }
       return g;
     };
-    const left = wingShape(-1), right = wingShape(1); root.userData.wings = [left,right];
-    const glow = new THREE.PointLight(0xd17c59, 1.8, 4.5, 2); glow.position.set(0,.2,.15); root.add(glow); root.userData.light = glow;
-    return root;
+    const left = wingShape(-1), right = wingShape(1); outer.userData.wings = [left,right];
+    const glow = new THREE.PointLight(0xd17c59, 1.8, 4.5, 2); glow.position.set(0,.2,.15); root.add(glow); outer.userData.light = glow;
+    return outer;
   }
   const bat = makeBat(); scene.add(bat);
 
   function makeTunnelSegment(i) {
-    const group = new THREE.Group(); group.position.z = -i * 8;
-    const n=14, rings=2, verts=[], indices=[];
-    for (let r=0;r<rings;r++) for (let j=0;j<n;j++) { const a=j/n*TAU; const radius=5.0 + rand(-.35,.35) + Math.sin(j*2.1+i)*.18; verts.push(Math.cos(a)*radius, Math.sin(a)*radius+1.3, r*8-4); }
-    for (let j=0;j<n;j++) { const a=j, b=(j+1)%n; indices.push(a,b,n+b, a,n+b,n+a); }
+    const group = new THREE.Group(); group.position.x = i * 8 - 16;
+    const n=10, rings=2, verts=[], indices=[];
+    // Open half-pipe: only the far wall (z<0) is built so the side-view camera at +z is not blocked.
+    for (let r=0;r<rings;r++) for (let j=0;j<=n;j++) { const a=j/n*Math.PI; const radius=5.0 + rand(-.35,.35) + Math.sin(j*2.1+i)*.18; verts.push(r*8-4, Math.cos(a)*radius+1.3, -Math.sin(a)*radius); }
+    for (let j=0;j<n;j++) { const a=j, b=j+1, w=n+1; indices.push(a,b,w+b, a,w+b,w+a); }
     const geom=new THREE.BufferGeometry(); geom.setAttribute('position',new THREE.Float32BufferAttribute(verts,3)); geom.setIndex(indices); geom.computeVertexNormals();
     const mesh=new THREE.Mesh(geom, choose(rockMats)); mesh.receiveShadow=true; group.add(mesh);
-    for (let j=0;j<3;j++) { const pebble=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.12,.33),0),choose(rockMats)); const a=rand(0,TAU), r=rand(4.75,5.15); pebble.position.set(Math.cos(a)*r,1.3+Math.sin(a)*r,rand(-3.8,3.8)); pebble.rotation.set(rand(0,TAU),rand(0,TAU),rand(0,TAU)); group.add(pebble); }
+    for (let j=0;j<3;j++) { const pebble=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.12,.33),0),choose(rockMats)); const a=rand(0,Math.PI), r=rand(4.75,5.15); pebble.position.set(rand(-3.8,3.8),1.3+Math.cos(a)*r,-Math.sin(a)*r); pebble.rotation.set(rand(0,TAU),rand(0,TAU),rand(0,TAU)); group.add(pebble); }
     return group;
   }
   const tunnel = Array.from({length:18}, (_,i) => { const g=makeTunnelSegment(i); scene.add(g); return g; });
@@ -87,13 +90,13 @@
   const particles=[];
   for(let i=0;i<MAX_PARTICLES;i++){ const material=new THREE.MeshBasicMaterial({color:dustColor,transparent:true,opacity:0}); const m=new THREE.Mesh(particleGeo,material); m.visible=false; scene.add(m); particles.push({mesh:m,life:0,vel:new THREE.Vector3(),gravity:-2}); }
   function burst(pos,count,color,force=.8){ for(let k=0;k<count;k++){ const p=particles.find(x=>!x.mesh.visible); if(!p) break; p.mesh.material.color.set(color); p.mesh.material.opacity=.8; p.mesh.visible=true; p.life=rand(.35,1.2); p.gravity=-2; p.mesh.scale.setScalar(rand(.5,1.8)); p.mesh.position.copy(pos); p.vel.set(rand(-1,1),rand(-.1,1.4),rand(-1,1)).normalize().multiplyScalar(rand(.2,force)); } }
-  function dustTrail(){ const p=particles.find(x=>!x.mesh.visible); if(!p) return; p.mesh.material.color.copy(dustColor);p.mesh.material.opacity=.42;p.mesh.visible=true;p.life=rand(.7,1.8);p.gravity=0;p.mesh.position.set(rand(-4,4),rand(-2,6),rand(-35,4));p.vel.set(0,rand(-.1,.1),rand(.3,.8)); }
+  function dustTrail(){ const p=particles.find(x=>!x.mesh.visible); if(!p) return; p.mesh.material.color.copy(dustColor);p.mesh.material.opacity=.42;p.mesh.visible=true;p.life=rand(.7,1.8);p.gravity=0;p.mesh.position.set(rand(-8,26),rand(-2,6),rand(-4,3));p.vel.set(-rand(2,5),rand(-.1,.1),0); }
 
   function readBestScore(){ try { const stored=Number(localStorage.getItem('flappyBatBest')); return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0; } catch (error) { return 0; } }
   function writeBestScore(value){ try { localStorage.setItem('flappyBatBest',String(value)); } catch (error) { /* Keep the in-memory best score when storage is unavailable. */ } }
-  let state='ready', score=0, best=readBestScore(), velocity=0, elapsed=0, runTime=0, spawnZ=-26, shake=0, last=performance.now();
+  let state='ready', score=0, best=readBestScore(), velocity=0, elapsed=0, runTime=0, shake=0, last=performance.now();
   bestEl.textContent=best;
-  function resetObstacles(){ obstacles.forEach((o,i)=>{o.position.z=-18-i*19;o.userData.active=i<7;o.userData.passed=false;o.userData.gap=rand(-.7,1.8);o.userData.spin=rand(-.5,.5); o.position.y=o.userData.gap; }); }
+  function resetObstacles(){ obstacles.forEach((o,i)=>{o.position.x=24+i*19;o.position.z=0;o.rotation.y=0;o.userData.active=i<7;o.userData.passed=false;o.userData.gap=rand(-.7,1.8); o.position.y=o.userData.gap; }); }
   resetObstacles();
   function setReady(){ state='ready'; score=0;scoreEl.textContent='0';velocity=0;runTime=0;bat.position.set(0,2.2,0);overlay.classList.remove('hidden');overlay.classList.add('ready');message.innerHTML='동굴 사이를 날아<br />최고 점수를 기록하세요.';startButton.innerHTML='날아오르기 <span>SPACE</span>';restartButton.classList.remove('visible');touchHint.classList.remove('off');resetObstacles(); }
   function start(){ if(state==='running') return; state='running';overlay.classList.add('hidden');restartButton.classList.remove('visible');touchHint.classList.add('off'); velocity=2.25; }
@@ -102,12 +105,12 @@
   function updateBat(dt){ if(state==='ready'){bat.position.y=2.2+Math.sin(elapsed*2.1)*.12;} else if(state==='running'){velocity-=10.4*dt;bat.position.y+=velocity*dt; if(bat.position.y>5.5||bat.position.y<-.8) gameOver(); } else { velocity-=7*dt;bat.position.y+=velocity*dt; bat.rotation.z+=dt*2.5; }
     const pitch=clamp(velocity*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=state==='over'?0:Math.sin(elapsed*10)*.38 + (state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
   function updateWorld(dt){ const speed=state==='running'?7.2+Math.min(runTime*.19,6):0; if(state==='running') runTime+=dt;
-    tunnel.forEach(g=>{g.position.z+=speed*dt;if(g.position.z>9)g.position.z-=tunnel.length*8;});
-    if(state==='running') obstacles.forEach(o=>{o.position.z+=speed*dt;o.rotation.y+=o.userData.spin*dt; if(o.position.z>9){o.position.z-=obstacles.length*19;o.position.y=rand(-.4,1.8);o.userData.gap=o.position.y;o.userData.passed=false;o.userData.active=true;} const dz=Math.abs(o.position.z); const dy=Math.abs(bat.position.y-o.position.y); if(dz<1.05 && (dy>1.55)) gameOver(); if(!o.userData.passed&&o.position.z>1){o.userData.passed=true;score++;scoreEl.textContent=score;} });
+    tunnel.forEach(g=>{g.position.x-=speed*dt;if(g.position.x<-16)g.position.x+=tunnel.length*8;});
+    if(state==='running') obstacles.forEach(o=>{o.position.x-=speed*dt; if(o.position.x<-16){o.position.x+=obstacles.length*19;o.position.y=rand(-.4,1.8);o.userData.gap=o.position.y;o.userData.passed=false;o.userData.active=true;} const dx=Math.abs(o.position.x-bat.position.x); const dy=Math.abs(bat.position.y-o.position.y); if(dx<1.05 && (dy>1.55)) gameOver(); if(!o.userData.passed&&o.position.x<bat.position.x){o.userData.passed=true;score++;scoreEl.textContent=score;} });
     if(Math.random()<dt*10) dustTrail();
   }
   function updateParticles(dt){particles.forEach(p=>{if(!p.mesh.visible)return;p.life-=dt;if(p.life<=0){p.mesh.visible=false;return;}p.vel.y+=p.gravity*dt;p.mesh.position.addScaledVector(p.vel,dt);p.mesh.rotation.x+=dt*4;p.mesh.material.opacity=clamp(p.life,0,1)*.65;});}
-  function render(now){ const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt; updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.035,dt); const targetY=bat.position.y+1.0; camera.position.y+=(targetY-camera.position.y)*Math.min(dt*3.4,1); camera.position.x+=(Math.sin(elapsed*1.4)*shake-camera.position.x)*Math.min(dt*10,1); camera.lookAt(0,bat.position.y+.1,-9); renderer.render(scene,camera); requestAnimationFrame(render); }
+  function render(now){ const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt; updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.035,dt); const targetY=bat.position.y+1.0; camera.position.y+=(targetY-camera.position.y)*Math.min(dt*3.4,1); camera.position.x+=(CAM_X+Math.sin(elapsed*1.4)*shake-camera.position.x)*Math.min(dt*10,1); camera.lookAt(CAM_X,bat.position.y+.1,0); renderer.render(scene,camera); requestAnimationFrame(render); }
   function onResize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));}
   startButton.addEventListener('click',flap); restartButton.addEventListener('click',()=>{setReady();});
   addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();flap();}}); renderer.domElement.addEventListener('pointerdown',e=>{if(e.button===0)flap();}); addEventListener('resize',onResize);
