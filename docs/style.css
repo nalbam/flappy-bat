@@ -27,6 +27,7 @@ h1 em { color:var(--rust); font-style:normal; }
 .result-score { font:800 64px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing:-.04em; }
 .result-best { color:var(--muted); font-size:14px; }
 .result-best.record { color:var(--rust); font-weight:700; }
+.result-seed { color:#817475; font:10px ui-monospace, SFMono-Regular, monospace; letter-spacing:.12em; }
 button { font:600 14px ui-sans-serif, system-ui, sans-serif; color:var(--cream); cursor:pointer; border:0; }
 .panel button { width:100%; padding:16px 20px; background:var(--rust); box-shadow:0 7px 22px rgba(216,117,84,.25); transition:transform .2s, background .2s; }
 .panel button:hover { background:#e48663; transform:translateY(-2px); }

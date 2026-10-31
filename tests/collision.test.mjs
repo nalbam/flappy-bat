@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 
 import {
   BAT_BODY_RADIUS, BAT_BODY_SCALE, BAT_HALF_HEIGHT, BAT_HALF_WIDTH, BAT_MODEL_YAW, BAT_PITCH_RANGE,
-  CAVE_CEILING, CAVE_FLOOR, FLAP_VELOCITY, GRAVITY, MAX_FRAME_SECONDS, TICK, TICK_RATE, bodyPitch, speedAt,
+  CAVE_CEILING, CAVE_FLOOR, FLAP_VELOCITY, MAX_FRAME_SECONDS, TICK, TICK_RATE, bodyPitch, speedAt,
 } from '../docs/game-rules.mjs';
 import { PILLAR_ROOT, bodyExtents, obstacleParts, sweepBody } from '../docs/collision.mjs';
-import {
-  OBSTACLE_GAP_HEIGHT, OBSTACLE_HALF_WIDTH, OBSTACLE_SPACING, RESPAWN_GAP_RANGE, START_GAP_RANGE, createGame,
-} from '../docs/game-core.mjs';
+import { createGame } from '../docs/game-core.mjs';
+import { OBSTACLE_HALF_WIDTH } from '../docs/obstacle-generator.mjs';
 
 const NEAR = 1e-6; // a clearance far above CONTACT_TOLERANCE and far below anything visible
 const STILL = { x: 0, y: 0 };
-const pillar = (x, gapY) => ({ x, gapY, gapHeight: OBSTACLE_GAP_HEIGHT, halfWidth: OBSTACLE_HALF_WIDTH });
+const GAP_HEIGHT = 4.13; // inside the generated gap heights; tests/obstacle-generator.test.mjs covers those
+const pillar = (x, gapY) => ({ x, gapY, gapHeight: GAP_HEIGHT, halfWidth: OBSTACLE_HALF_WIDTH });
 const touch = (centre, pitch = 0, obstacles = []) => sweepBody(centre, STILL, pitch, obstacles);
 const part = (obstacle, side) => obstacleParts(obstacle).find((p) => p.side === side);
 
@@ -43,18 +43,6 @@ function sampledBodyExtents(pitch) {
     }
   }
   return { halfWidth, halfHeight };
-}
-
-// Deterministic PRNG (mulberry32).
-function seeded(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 test('the body outline is the body mesh seen on the play plane, at every tilt the renderer draws', () => {
@@ -173,28 +161,11 @@ test('a close pass that never touches is not a crash', () => {
   assert.ok(slide(-NEAR));
 });
 
-test('every gap the game generates leaves the body more room than a flap rises', () => {
-  // A flap rises v²/2g. On top of that the player gets a quarter second of fall from the apex.
-  const rise = FLAP_VELOCITY ** 2 / (2 * GRAVITY);
-  const slack = GRAVITY / 2 * 0.25 ** 2;
-  for (const [min, max] of [START_GAP_RANGE, RESPAWN_GAP_RANGE]) {
-    for (let i = 0; i <= 100; i++) {
-      const gapY = min + (max - min) * i / 100;
-      const parts = obstacleParts(pillar(0, gapY));
-      const floor = parts.find((p) => p.side === 'lower')?.edgeY ?? CAVE_FLOOR;
-      const ceiling = parts.find((p) => p.side === 'upper')?.edgeY ?? CAVE_CEILING;
-      const room = ceiling - floor - 2 * BAT_HALF_HEIGHT;
-      assert.ok(room >= rise + slack, `gapY ${gapY.toFixed(3)}: centre room ${room.toFixed(3)}`);
-      assert.ok(floor >= CAVE_FLOOR && ceiling <= CAVE_CEILING);
-    }
-  }
-});
-
 test('outlines: gap edges and buried parts', () => {
   const both = obstacleParts(pillar(3, 2));
   assert.deepEqual(both.map((p) => p.side), ['lower', 'upper']);
   for (const p of both) {
-    assert.ok(Math.abs(Math.abs(p.edgeY - 2) - OBSTACLE_GAP_HEIGHT / 2) < 1e-12, `${p.side} edge on the gap`);
+    assert.ok(Math.abs(Math.abs(p.edgeY - 2) - GAP_HEIGHT / 2) < 1e-12, `${p.side} edge on the gap`);
     const surface = p.side === 'lower' ? CAVE_FLOOR : CAVE_CEILING;
     assert.ok(Math.abs(Math.abs(p.rootY - surface) - PILLAR_ROOT) < 1e-12, `${p.side} base buried in the rock`);
     const xs = p.polygon.map(([x]) => x), ys = p.polygon.map(([, y]) => y);
@@ -204,7 +175,7 @@ test('outlines: gap edges and buried parts', () => {
     assert.equal(Math.max(...ys), Math.max(p.edgeY, p.rootY));
   }
   // A gap edge below the floor leaves only the upper part.
-  const low = obstacleParts(pillar(0, CAVE_FLOOR + OBSTACLE_GAP_HEIGHT / 2 - 0.01));
+  const low = obstacleParts(pillar(0, CAVE_FLOOR + GAP_HEIGHT / 2 - 0.01));
   assert.deepEqual(low.map((p) => p.side), ['upper']);
 });
 
@@ -212,7 +183,7 @@ test('outlines: gap edges and buried parts', () => {
 
 // Puts the first obstacles at the given [x, gapY] entries and moves the others out of reach.
 function placeObstacles(game, entries) {
-  game.obstacles.forEach((o, i) => { o.x = 1000 + i * OBSTACLE_SPACING; });
+  game.obstacles.forEach((o, i) => { o.x = 1000 + i * 20; });
   return entries.map(([x, gapY], i) => Object.assign(game.obstacles[i], { x, gapY }));
 }
 
@@ -220,7 +191,7 @@ test('a crash inside a delayed frame ends the run once, at the touching pose, wi
   const MAX_TICKS = Math.round(MAX_FRAME_SECONDS * TICK_RATE);
   const dx = speedAt(0) * TICK;
   const setUp = (withWall) => {
-    const game = createGame({ random: seeded(21) });
+    const game = createGame({ seed: 21 });
     game.flap();
     const reach = bodyExtents(bodyPitch(FLAP_VELOCITY)).halfWidth;
     // Behind the bat with its gap around it: its back face clears the body 7.5 ticks in.
@@ -259,7 +230,7 @@ test('a crash inside a delayed frame ends the run once, at the touching pose, wi
 });
 
 test('a fall ends with the body on the floor surface', () => {
-  const game = createGame({ random: seeded(22) });
+  const game = createGame({ seed: 22 });
   game.flap();
   placeObstacles(game, []);
   while (game.state === 'running') game.advance(1 / 60);

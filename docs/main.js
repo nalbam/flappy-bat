@@ -6,6 +6,7 @@ import {
 } from './game-rules.mjs';
 import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-core.mjs';
 import { obstacleParts } from './collision.mjs';
+import { MAX_SEED, parseSeed, randomSeed } from './obstacle-generator.mjs';
 import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } from './rock-mesh.mjs';
 
 (() => {
@@ -118,7 +119,11 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   function readBestScore(){ try { const stored=Number(localStorage.getItem('flappyBatBest')); return Number.isFinite(stored) && stored >= 0 ? Math.floor(stored) : 0; } catch (error) { return 0; } }
   function writeBestScore(value){ try { localStorage.setItem('flappyBatBest',String(value)); } catch (error) { /* Keep the in-memory best score when storage is unavailable. */ } }
   // The model owns state, bat physics, score and obstacles; this file renders it and runs effects.
-  const game=createGame(), clock=createFrameClock();
+  // Every run draws a new obstacle seed; `?seed=N` replays the layout of seed N in every run. Obstacles use
+  // only their seed, so the Math.random calls of rocks, materials and particles never change them.
+  const seedParam=new URLSearchParams(location.search).get('seed'), fixedSeed=parseSeed(seedParam);
+  if(seedParam!==null&&fixedSeed===null) console.warn(`Ignored seed "${seedParam}": use an integer from 0 to ${MAX_SEED}.`);
+  const game=createGame({ seed:fixedSeed ?? randomSeed }), clock=createFrameClock();
   let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, restY=CAVE_FLOOR, shownScore=0, scrolled=0;
   const crashPoint = new THREE.Vector3();
   bestEl.textContent=best;
@@ -136,7 +141,8 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   // `ready` shows the start guide and `over` a compact crash result. While running, the overlay fades out
   // as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
   function showScreen(phase){ const running=phase==='running'; if(!running) overlay.dataset.phase=phase; overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
-  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span>`; }
+  // The seed lets a player report the run; `?seed=<seed>` replays its obstacles.
+  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span><span class="result-seed">SEED ${game.seed}</span>`; }
   function flap(){ if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else game.flap(); }
   // While running the bat shows exactly the model pose that collision tests: centre height and bodyPitch tilt.
   // After a crash it falls as an effect and stops on the floor or the lower pillar under it.
