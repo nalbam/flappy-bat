@@ -4,17 +4,11 @@ import {
   bodyPitch, integrateVertical, speedAt,
 } from './game-rules.mjs';
 import { bodyExtents, sweepBody } from './collision.mjs';
+import { OBSTACLE_HALF_WIDTH, createObstacleGenerator, randomSeed } from './obstacle-generator.mjs';
 
 export const OBSTACLE_COUNT = 9;
-export const OBSTACLE_SPACING = 19;
-export const FIRST_OBSTACLE_X = 24;
-export const OBSTACLE_RECYCLE_X = -16; // an obstacle left of this moves to the back of the row
-// Opening between the gap edges of the two pillars. The centre of an upright body (half
-// height 0.516) can move 1.549 up or down from the gap centre: 3.1 of room, about 2.5 flap rises.
-export const OBSTACLE_GAP_HEIGHT = 4.13;
-export const OBSTACLE_HALF_WIDTH = 0.62; // half width of the pillar outline
-export const START_GAP_RANGE = [-0.7, 1.8]; // gapY range when a run is set up
-export const RESPAWN_GAP_RANGE = [-0.4, 1.8]; // gapY range for a recycled obstacle
+// An obstacle left of this moves behind the farthest one, at the next generated spacing.
+export const OBSTACLE_RECYCLE_X = -16;
 
 // True when the whole bat body, at its current tilt, is past the obstacle's back face (its +x side).
 export function hasCleared(bat, obstacle) {
@@ -22,19 +16,35 @@ export function hasCleared(bat, obstacle) {
 }
 
 /**
- * Creates the game model. `random` returns numbers in [0, 1) and picks gap heights.
+ * Creates the game model. `seed` picks the obstacle layout of each run: a number gives every
+ * run the same layout, a function is called by every reset() for the seed of the new run.
+ * The default draws a fresh seed per run from the platform's cryptographic random source.
  *
  * - `state` is 'ready', 'running' or 'over'. Only 'running' advances.
- * - `obstacles` holds OBSTACLE_COUNT descriptors `{ x, gapY, gapHeight, halfWidth, passed }`.
- *   The array and its objects keep their identity, so a renderer can map index to mesh.
+ * - `seed` is the seed of the current run; createObstacleGenerator(seed) repeats its obstacles.
+ * - `obstacles` holds OBSTACLE_COUNT descriptors `{ index, x, gapY, gapHeight, halfWidth, passed }`,
+ *   `index` being the order in which the run's generator made them. The array and its objects
+ *   keep their identity, so a renderer can map index to mesh.
  * - `distance` is how far the world scrolled in this run; `tick` counts simulated ticks.
  * - `crash` is null until the run ends, then `{ x, y, solid }`: the touched point of the floor,
  *   the ceiling or a pillar. The bat and the obstacles stay where the body touched it.
  */
-export function createGame({ random = Math.random } = {}) {
-  const randomIn = ([min, max]) => min + random() * (max - min);
+export function createGame({ seed = randomSeed } = {}) {
+  const nextSeed = typeof seed === 'function' ? seed : () => seed;
+  let generator = null; // the current run's obstacle stream; it keeps no history of its own
+  // Copies the next generated obstacle into `o`: at its start position in a new run, or
+  // `after` (the farthest obstacle) plus the generated spacing when an obstacle is reused.
+  const place = (o, after) => {
+    const d = generator.next();
+    o.index = d.index;
+    o.x = after ? after.x + d.spacing : d.x;
+    o.gapY = d.gapY;
+    o.gapHeight = d.gapHeight;
+    o.passed = false;
+  };
   const game = {
     state: 'ready',
+    seed: 0,
     bat: { x: BAT_X, y: BAT_START_Y, velocity: 0 },
     score: 0,
     runTime: 0,
@@ -43,11 +53,12 @@ export function createGame({ random = Math.random } = {}) {
     accumulator: 0, // frame time not yet consumed by a tick
     crash: null,
     obstacles: Array.from({ length: OBSTACLE_COUNT }, () => ({
-      x: 0, gapY: 0, gapHeight: OBSTACLE_GAP_HEIGHT, halfWidth: OBSTACLE_HALF_WIDTH, passed: false,
+      index: 0, x: 0, gapY: 0, gapHeight: 0, halfWidth: OBSTACLE_HALF_WIDTH, passed: false,
     })),
 
-    // Back to 'ready' with a new obstacle row; the bat waits at the start position.
+    // Back to 'ready' with the obstacle row of a new run seed; the bat waits at the start position.
     reset() {
+      const runGenerator = createObstacleGenerator(nextSeed()); // an invalid seed throws before anything changes
       game.state = 'ready';
       game.bat.x = BAT_X;
       game.bat.y = BAT_START_Y;
@@ -58,11 +69,9 @@ export function createGame({ random = Math.random } = {}) {
       game.tick = 0;
       game.accumulator = 0;
       game.crash = null;
-      game.obstacles.forEach((o, i) => {
-        o.x = FIRST_OBSTACLE_X + i * OBSTACLE_SPACING;
-        o.gapY = randomIn(START_GAP_RANGE);
-        o.passed = false;
-      });
+      game.seed = runGenerator.seed;
+      generator = runGenerator;
+      game.obstacles.forEach((o) => place(o, null));
     },
 
     // Sets the upward velocity once. In 'ready' it also starts the run, so the
@@ -98,9 +107,7 @@ export function createGame({ random = Math.random } = {}) {
       }
       for (const o of game.obstacles) {
         if (o.x < OBSTACLE_RECYCLE_X) {
-          o.x += OBSTACLE_COUNT * OBSTACLE_SPACING;
-          o.gapY = randomIn(RESPAWN_GAP_RANGE);
-          o.passed = false;
+          place(o, game.obstacles.reduce((far, other) => (other.x > far.x ? other : far)));
         }
       }
       for (const o of game.obstacles) {

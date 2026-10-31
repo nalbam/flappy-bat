@@ -6,27 +6,13 @@ import {
   MAX_SPEED_BONUS, TICK, TICK_RATE, bodyPitch, speedAt,
 } from '../docs/game-rules.mjs';
 import { bodyExtents } from '../docs/collision.mjs';
-import {
-  FIRST_OBSTACLE_X, OBSTACLE_COUNT, OBSTACLE_RECYCLE_X, OBSTACLE_SPACING, START_GAP_RANGE,
-  createFrameClock, createGame, startRun,
-} from '../docs/game-core.mjs';
+import { OBSTACLE_COUNT, OBSTACLE_RECYCLE_X, createFrameClock, createGame, startRun } from '../docs/game-core.mjs';
+import { FIRST_OBSTACLE_X, createObstacleGenerator } from '../docs/obstacle-generator.mjs';
 
 const EPS = 1e-9;
 const MAX_TICKS_PER_FRAME = Math.round(MAX_FRAME_SECONDS * TICK_RATE);
 // Half width of the body at its current tilt, the extent that must pass a pillar's back face.
 const bodyHalfWidth = (game) => bodyExtents(bodyPitch(game.bat.velocity)).halfWidth;
-
-// Deterministic PRNG (mulberry32) so obstacle gaps repeat between runs.
-function seeded(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function snapshot(game) {
   return {
@@ -62,7 +48,7 @@ function autopilot(game, margin) {
 
 // Puts one obstacle at x with its gap at gapY and moves the others out of reach.
 function soloObstacle(game, x, gapY) {
-  game.obstacles.forEach((o, i) => { o.x = 1000 + i * OBSTACLE_SPACING; });
+  game.obstacles.forEach((o, i) => { o.x = 1000 + i * 20; });
   const obstacle = game.obstacles[0];
   obstacle.x = x;
   obstacle.gapY = gapY;
@@ -76,7 +62,7 @@ test('speed grows with run time and stops at the cap', () => {
 });
 
 test('ready and over do not advance the model or bank frame time', () => {
-  const game = createGame({ random: seeded(1) });
+  const game = createGame({ seed: 1 });
   const ready = snapshot(game);
   assert.equal(game.advance(0.05), 0);
   game.step();
@@ -102,14 +88,14 @@ test('the start input and a normal flap apply the same single impulse, then grav
     const y0 = game.bat.y;
     return Array.from({ length: 90 }, () => { game.step(); return [game.bat.y - y0, game.bat.velocity]; });
   };
-  const started = createGame({ random: seeded(2) });
+  const started = createGame({ seed: 2 });
   assert.equal(started.state, 'ready');
   assert.equal(started.flap(), true);
   assert.equal(started.state, 'running');
   assert.equal(started.bat.velocity, FLAP_VELOCITY);
   const afterStart = trace(started);
 
-  const flapped = createGame({ random: seeded(2) });
+  const flapped = createGame({ seed: 2 });
   flapped.flap();
   for (let i = 0; i < 30; i++) flapped.step();
   flapped.flap();
@@ -136,10 +122,9 @@ test('30, 60 and 144 Hz frames and delayed frames give the same run for the same
     'alternating 100/67 ms frames': [MAX_FRAME_SECONDS, 1 / 15],
   };
   const SECONDS = 14;
-  // Gaps from the middle of each range, so an autopilot that acts every 1/6 s survives.
-  const middleGaps = () => { const r = seeded(9); return () => 0.4 + 0.3 * r(); };
+  // The generated gaps of this seed let an autopilot that acts every 1/6 s survive the scenario.
   const play = (withInput, onFrame) => {
-    const game = createGame({ random: middleGaps() });
+    const game = createGame({ seed: 9 });
     game.flap();
     let decided = 0;
     onFrame(game, () => {
@@ -171,14 +156,14 @@ test('30, 60 and 144 Hz frames and delayed frames give the same run for the same
 });
 
 test('frame times that sum to a tick boundary run that tick despite float rounding', () => {
-  const game = createGame({ random: seeded(3) });
+  const game = createGame({ seed: 3 });
   game.flap();
   for (let i = 0; i < 24; i++) game.advance(1 / 144);
   assert.equal(game.tick, 20);
 });
 
 test('a long frame runs at most the catch-up limit and drops the rest', () => {
-  const game = createGame({ random: seeded(4) });
+  const game = createGame({ seed: 4 });
   game.flap();
   assert.equal(game.advance(0.5), MAX_TICKS_PER_FRAME);
   assert.ok(Math.abs(game.runTime - MAX_FRAME_SECONDS) < EPS);
@@ -198,7 +183,7 @@ test('frame clock: no time on the first frame or after a tab returns, clamped lo
 });
 
 test('a hidden tab resumes the run where it stopped', () => {
-  const game = createGame({ random: seeded(5) });
+  const game = createGame({ seed: 5 });
   const clock = createFrameClock();
   let now = 0;
   game.flap();
@@ -215,7 +200,7 @@ test('a hidden tab resumes the run where it stopped', () => {
 });
 
 test('a start or restart simulates no frame time from before the start input', () => {
-  const game = createGame({ random: seeded(12) });
+  const game = createGame({ seed: 12 });
   const clock = createFrameClock();
   const frame = (now) => game.advance(clock.frame(now));
   const afterStart = (label, startedAt) => {
@@ -254,7 +239,7 @@ test('a start or restart simulates no frame time from before the start input', (
 });
 
 test('an obstacle scores once, only after the whole body leaves its back face', () => {
-  const game = createGame({ random: seeded(6) });
+  const game = createGame({ seed: 6 });
   game.flap();
   const obstacle = soloObstacle(game, 0.3, game.bat.y);
   const behindBat = () => obstacle.x + obstacle.halfWidth <= game.bat.x - bodyHalfWidth(game);
@@ -274,7 +259,7 @@ test('an obstacle scores once, only after the whole body leaves its back face', 
 });
 
 test('a recycled obstacle scores again exactly once per pass', () => {
-  const game = createGame({ random: seeded(11) });
+  const game = createGame({ seed: 11 });
   game.flap();
   const passes = Array(OBSTACLE_COUNT).fill(0);
   while (game.state === 'running' && game.score < OBSTACLE_COUNT + 3) {
@@ -300,7 +285,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
     return soloObstacle(game, -(game.obstacles[0].halfWidth + bodyHalfWidth(game)) + step / 2, game.bat.y);
   };
 
-  const control = createGame({ random: seeded(7) });
+  const control = createGame({ seed: 7 });
   control.flap();
   const scored = clearing(control);
   control.step();
@@ -309,7 +294,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
   assert.equal(scored.passed, true);
 
   // The cave floor ends the run in the tick the obstacle clears.
-  const floor = createGame({ random: seeded(7) });
+  const floor = createGame({ seed: 7 });
   floor.flap();
   floor.bat.y = CAVE_FLOOR + BAT_HALF_HEIGHT + 0.001;
   floor.bat.velocity = -3;
@@ -320,7 +305,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
   assert.equal(cleared.passed, false);
 
   // Another obstacle hits the bat in the tick the first one clears.
-  const hit = createGame({ random: seeded(7) });
+  const hit = createGame({ seed: 7 });
   hit.flap();
   const first = clearing(hit);
   Object.assign(hit.obstacles[1], { x: 0.5, gapY: hit.bat.y + 3 });
@@ -330,7 +315,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
   assert.equal(first.passed, false);
 
   // Outside the gap after the obstacle centre passed the bat: a crash, not a point.
-  const late = createGame({ random: seeded(7) });
+  const late = createGame({ seed: 7 });
   late.flap();
   soloObstacle(late, -0.5, late.bat.y + 2);
   late.step();
@@ -341,7 +326,7 @@ test('the tick that ends a run adds no point, even when an obstacle clears in it
 });
 
 test('reset restores a fresh ready run after a crash', () => {
-  const game = createGame({ random: seeded(8) });
+  const game = createGame({ seed: 8 });
   game.flap();
   soloObstacle(game, 0.3, game.bat.y);
   while (game.score === 0) game.step();
@@ -359,10 +344,11 @@ test('reset restores a fresh ready run after a crash', () => {
   assert.equal(game.accumulator, 0);
   assert.equal(speedAt(game.runTime), BASE_SPEED);
   assert.deepEqual(game.bat, { x: BAT_X, y: BAT_START_Y, velocity: 0 });
-  game.obstacles.forEach((o, i) => {
-    assert.equal(o.x, FIRST_OBSTACLE_X + i * OBSTACLE_SPACING);
-    assert.equal(o.passed, false);
-    assert.ok(o.gapY >= START_GAP_RANGE[0] && o.gapY < START_GAP_RANGE[1]);
+  // The same seed sets up the same first obstacles: the generator's first descriptors at their start positions.
+  const generator = createObstacleGenerator(8);
+  game.obstacles.forEach((o) => {
+    const d = generator.next();
+    assert.deepEqual([o.index, o.x, o.gapY, o.gapHeight, o.passed], [d.index, d.x, d.gapY, d.gapHeight, false]);
   });
 
   game.flap();

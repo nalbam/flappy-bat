@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CAVE_CEILING, CAVE_FLOOR } from '../docs/game-rules.mjs';
 import { obstacleParts } from '../docs/collision.mjs';
-import { OBSTACLE_GAP_HEIGHT, OBSTACLE_HALF_WIDTH, RESPAWN_GAP_RANGE, START_GAP_RANGE } from '../docs/game-core.mjs';
+import { GAP_EDGE_RANGE, GAP_HEIGHT_RANGE, OBSTACLE_HALF_WIDTH } from '../docs/obstacle-generator.mjs';
 import {
   CAVE_LIP_DEPTH, PILLAR_DEPTH, STONE_MARGIN, TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh,
 } from '../docs/rock-mesh.mjs';
@@ -41,10 +41,14 @@ function signedDistance([x, y], polygon) {
   return inside > 0 ? outside : inside;
 }
 
-// Gap heights across both generation ranges, plus edges that sit just above the floor or ceiling.
-const GAPS = [...START_GAP_RANGE, ...RESPAWN_GAP_RANGE, 0.3, 1.1,
-  CAVE_FLOOR + OBSTACLE_GAP_HEIGHT / 2 + 0.05, CAVE_CEILING - OBSTACLE_GAP_HEIGHT / 2 - 0.05];
-const PARTS = GAPS.flatMap((gapY) => obstacleParts({ x: 0, gapY, gapHeight: OBSTACLE_GAP_HEIGHT, halfWidth: OBSTACLE_HALF_WIDTH }));
+// The narrowest and widest generated gaps at the lowest, middle and highest generated positions,
+// plus edges that sit just above the floor or below the ceiling.
+const [EDGE_LOW, EDGE_HIGH] = GAP_EDGE_RANGE;
+const GAPS = [GAP_HEIGHT_RANGE.hard[0], GAP_HEIGHT_RANGE.easy[1]].flatMap((gapHeight) => [
+  EDGE_LOW + gapHeight / 2, (EDGE_LOW + EDGE_HIGH) / 2, EDGE_HIGH - gapHeight / 2,
+  CAVE_FLOOR + gapHeight / 2 + 0.05, CAVE_CEILING - gapHeight / 2 - 0.05,
+].map((gapY) => ({ gapY, gapHeight })));
+const PARTS = GAPS.flatMap((gap) => obstacleParts({ x: 0, ...gap, halfWidth: OBSTACLE_HALF_WIDTH }));
 
 test('the pillar mesh meets the play plane exactly on its collision outline', () => {
   assert.ok(PARTS.length >= GAPS.length, 'most gaps have both parts');
