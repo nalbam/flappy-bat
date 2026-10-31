@@ -1,30 +1,24 @@
 /* Flappy Bat game model: state, bat, score and obstacles on a fixed tick, no DOM or THREE. */
 import {
-  BAT_HALF_WIDTH, BAT_START_Y, BAT_X, FLAP_VELOCITY, MAX_FRAME_SECONDS, TICK, TICK_EPSILON,
-  integrateVertical, isOutsideCave, speedAt,
+  BAT_START_Y, BAT_X, FLAP_VELOCITY, MAX_FRAME_SECONDS, TICK, TICK_EPSILON,
+  bodyPitch, integrateVertical, speedAt,
 } from './game-rules.mjs';
+import { bodyExtents, sweepBody } from './collision.mjs';
 
 export const OBSTACLE_COUNT = 9;
 export const OBSTACLE_SPACING = 19;
 export const FIRST_OBSTACLE_X = 24;
 export const OBSTACLE_RECYCLE_X = -16; // an obstacle left of this moves to the back of the row
-export const OBSTACLE_GAP_HEIGHT = 3.2; // opening between the inner ends of the two pillars
-export const OBSTACLE_HALF_WIDTH = 0.62; // narrowest pillar radius
+// Opening between the gap edges of the two pillars. The centre of an upright body (half
+// height 0.516) can move 1.549 up or down from the gap centre: 3.1 of room, about 2.5 flap rises.
+export const OBSTACLE_GAP_HEIGHT = 4.13;
+export const OBSTACLE_HALF_WIDTH = 0.62; // half width of the pillar outline
 export const START_GAP_RANGE = [-0.7, 1.8]; // gapY range when a run is set up
 export const RESPAWN_GAP_RANGE = [-0.4, 1.8]; // gapY range for a recycled obstacle
-// The original hit test let the bat centre move 1.55 from the gap centre (gap half
-// height 1.6 minus 0.05). hitsObstacle keeps that until body collision replaces it.
-export const LEGACY_GAP_INSET = 0.05;
 
-// Pure hit test: the bat overlaps the obstacle along x and is outside its gap.
-export function hitsObstacle(bat, obstacle) {
-  return Math.abs(obstacle.x - bat.x) < obstacle.halfWidth + BAT_HALF_WIDTH
-    && Math.abs(bat.y - obstacle.gapY) > obstacle.gapHeight / 2 - LEGACY_GAP_INSET;
-}
-
-// True when the whole bat body is past the obstacle's back face (its +x side).
+// True when the whole bat body, at its current tilt, is past the obstacle's back face (its +x side).
 export function hasCleared(bat, obstacle) {
-  return obstacle.x + obstacle.halfWidth <= bat.x - BAT_HALF_WIDTH;
+  return obstacle.x + obstacle.halfWidth <= bat.x - bodyExtents(bodyPitch(bat.velocity)).halfWidth;
 }
 
 /**
@@ -34,6 +28,8 @@ export function hasCleared(bat, obstacle) {
  * - `obstacles` holds OBSTACLE_COUNT descriptors `{ x, gapY, gapHeight, halfWidth, passed }`.
  *   The array and its objects keep their identity, so a renderer can map index to mesh.
  * - `distance` is how far the world scrolled in this run; `tick` counts simulated ticks.
+ * - `crash` is null until the run ends, then `{ x, y, solid }`: the touched point of the floor,
+ *   the ceiling or a pillar. The bat and the obstacles stay where the body touched it.
  */
 export function createGame({ random = Math.random } = {}) {
   const randomIn = ([min, max]) => min + random() * (max - min);
@@ -45,6 +41,7 @@ export function createGame({ random = Math.random } = {}) {
     distance: 0,
     tick: 0,
     accumulator: 0, // frame time not yet consumed by a tick
+    crash: null,
     obstacles: Array.from({ length: OBSTACLE_COUNT }, () => ({
       x: 0, gapY: 0, gapHeight: OBSTACLE_GAP_HEIGHT, halfWidth: OBSTACLE_HALF_WIDTH, passed: false,
     })),
@@ -60,6 +57,7 @@ export function createGame({ random = Math.random } = {}) {
       game.distance = 0;
       game.tick = 0;
       game.accumulator = 0;
+      game.crash = null;
       game.obstacles.forEach((o, i) => {
         o.x = FIRST_OBSTACLE_X + i * OBSTACLE_SPACING;
         o.gapY = randomIn(START_GAP_RANGE);
@@ -76,29 +74,34 @@ export function createGame({ random = Math.random } = {}) {
       return true;
     },
 
-    // One fixed tick: move the bat and the world, then judge. A crash ends the
-    // tick before scoring, so the tick that ends a run never adds points.
+    // One fixed tick. The body sweeps its whole move against the obstacles before anything
+    // moves. On a contact the bat and the world stop at the touching position and the run
+    // ends before scoring, so the tick that ends a run never adds points.
     step() {
       if (game.state !== 'running') return;
       const bat = game.bat;
       const next = integrateVertical(bat.y, bat.velocity, TICK);
-      bat.y = next.y;
-      bat.velocity = next.velocity;
       const dx = speedAt(game.runTime) * TICK;
+      const dy = next.y - bat.y;
+      const contact = sweepBody({ x: bat.x, y: bat.y }, { x: dx, y: dy }, bodyPitch(next.velocity), game.obstacles);
+      const moved = contact ? dx * contact.time : dx;
+      bat.y = contact ? bat.y + dy * contact.time : next.y;
+      bat.velocity = next.velocity;
       game.runTime += TICK;
-      game.distance += dx;
+      game.distance += moved;
       game.tick += 1;
+      for (const o of game.obstacles) o.x -= moved;
+      if (contact) {
+        game.state = 'over';
+        game.crash = { x: contact.x - moved, y: contact.y, solid: contact.solid };
+        return;
+      }
       for (const o of game.obstacles) {
-        o.x -= dx;
         if (o.x < OBSTACLE_RECYCLE_X) {
           o.x += OBSTACLE_COUNT * OBSTACLE_SPACING;
           o.gapY = randomIn(RESPAWN_GAP_RANGE);
           o.passed = false;
         }
-      }
-      if (isOutsideCave(bat.y) || game.obstacles.some((o) => hitsObstacle(bat, o))) {
-        game.state = 'over';
-        return;
       }
       for (const o of game.obstacles) {
         if (!o.passed && hasCleared(bat, o)) {

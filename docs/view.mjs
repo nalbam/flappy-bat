@@ -4,8 +4,8 @@
  * World-space window, relative to the bat, that must stay visible at every screen size.
  * - `behind`/`ahead`: x distance kept on screen behind and in front of the bat.
  *   `ahead` gives about 1.3 s of look-ahead at the start speed (7.2 units/s).
- * - `bottom`/`top`: covers the flight band (-0.8 to 5.5) with margins.
- *   The top margin leaves room for the HUD above the ceiling.
+ * - `bottom`/`top`: covers the cave floor (CAVE_FLOOR, -1.32) and ceiling (CAVE_CEILING, 6.02)
+ *   with rock visible beyond them. The top margin leaves room for the HUD above the ceiling.
  * - `batScreenX`: preferred bat position as a fraction of the screen width.
  */
 export const PLAY_VIEW = Object.freeze({ behind: 3, ahead: 9.5, bottom: -2.2, top: 7.4, batScreenX: 0.25 });

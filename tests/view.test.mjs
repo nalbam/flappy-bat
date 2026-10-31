@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PLAY_VIEW, frameView } from '../docs/view.mjs';
+import { CAVE_CEILING, CAVE_FLOOR } from '../docs/game-rules.mjs';
 
 const FOV = 65;
 const EPS = 1e-9;
@@ -33,4 +34,9 @@ test('wide screens keep the flight band height and give extra width to the look-
   assert.ok(Math.abs(desktop.height - (PLAY_VIEW.top - PLAY_VIEW.bottom)) < EPS);
   const ahead = (view) => view.x + view.width / 2;
   assert.ok(ahead(ultrawide) > ahead(desktop));
+});
+
+test('the cave floor and ceiling the body touches are on screen, with rock beyond them', () => {
+  assert.ok(PLAY_VIEW.bottom <= CAVE_FLOOR - 0.5, 'floor rock below the floor surface');
+  assert.ok(PLAY_VIEW.top >= CAVE_CEILING + 1, 'ceiling rock and the HUD above the ceiling surface');
 });

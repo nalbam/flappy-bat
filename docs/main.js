@@ -1,8 +1,12 @@
 /* Flappy Bat — procedural Three.js game, no build step required. */
 import { bindInput } from './input.mjs';
 import { frameView } from './view.mjs';
-import { BAT_START_Y, BAT_X } from './game-rules.mjs';
+import {
+  BAT_BODY_RADIUS, BAT_BODY_SCALE, BAT_HALF_HEIGHT, BAT_HALF_WIDTH, BAT_MODEL_YAW, BAT_START_Y, BAT_X, CAVE_FLOOR, bodyPitch,
+} from './game-rules.mjs';
 import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-core.mjs';
+import { obstacleParts } from './collision.mjs';
+import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } from './rock-mesh.mjs';
 
 (() => {
   'use strict';
@@ -13,7 +17,7 @@ import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-c
   const stage = $('game'), sceneHost = $('scene'), scoreEl = $('score'), bestEl = $('best');
   const overlay = $('overlay'), message = $('message'), startButton = $('startButton');
   const restartButton = $('restartButton'), touchHint = $('touchHint');
-  const TAU = Math.PI * 2, MAX_PARTICLES = 230;
+  const MAX_PARTICLES = 230;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rand = (a, b) => a + Math.random() * (b - a);
   const choose = (a) => a[Math.floor(Math.random() * a.length)];
@@ -44,10 +48,11 @@ import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-c
   const batWingMat = new THREE.MeshStandardMaterial({ color:0x734454, roughness:.84, side:THREE.DoubleSide, flatShading:true });
   const eyeMat = new THREE.MeshBasicMaterial({ color:0xf5ae67 });
 
+  // The body uses the size and turn that define the collision ellipse in game-rules.mjs; the head, ears and wings are not part of it.
   function makeBat() {
-    const outer = new THREE.Group(); outer.position.set(0, 2.2, 0);
-    const root = new THREE.Group(); root.rotation.y = -Math.PI / 2; outer.add(root); // model faces -z; turn it to face +x
-    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(.43, 1), batMat); body.scale.set(.82, 1.2, 1); body.castShadow = true; root.add(body);
+    const outer = new THREE.Group(); outer.position.set(BAT_X, BAT_START_Y, 0);
+    const root = new THREE.Group(); root.rotation.y = BAT_MODEL_YAW; outer.add(root); // model faces -z; turn it to face +x
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(BAT_BODY_RADIUS, 1), batMat); body.scale.set(...BAT_BODY_SCALE); body.castShadow = true; root.add(body);
     const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.36, 1), batMat); head.position.set(0,.45,-.06); root.add(head);
     [-1, 1].forEach((s) => {
       const ear = new THREE.Mesh(new THREE.ConeGeometry(.15, .43, 4), batMat); ear.position.set(s*.19,.78,-.04); ear.rotation.z = s * -.18; root.add(ear);
@@ -69,28 +74,38 @@ import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-c
   }
   const bat = makeBat(); scene.add(bat);
 
+  function meshGeometry({ positions, indices }) { const geom=new THREE.BufferGeometry(); geom.setAttribute('position',new THREE.Float32BufferAttribute(positions,3)); geom.setIndex(indices); geom.computeVertexNormals(); return geom; }
+  const rimMat = new THREE.MeshStandardMaterial({ color:0x221b20, roughness:.98, flatShading:true, side:THREE.DoubleSide });
+  // Cave segments from rock-mesh.mjs: the floor and ceiling rims are creases on the play plane at the collision surfaces.
+  // The open side faces the camera at +z; only the cliffs below the floor and above the ceiling reach toward it.
+  // Segment i ends on the section where segment i + 1 starts, also when the first segment moves behind the last.
+  const TUNNEL_SEGMENTS = 18, tunnelSectionRing = tunnelSections(TUNNEL_SEGMENTS, Math.random);
   function makeTunnelSegment(i) {
-    const group = new THREE.Group(); group.position.x = i * 8 - 16;
-    const n=10, rings=2, verts=[], indices=[];
-    // Open half-pipe: only the far wall (z<0) is built so the side-view camera at +z is not blocked.
-    for (let r=0;r<rings;r++) for (let j=0;j<=n;j++) { const a=j/n*Math.PI; const radius=5.0 + rand(-.35,.35) + Math.sin(j*2.1+i)*.18; verts.push(r*8-4, Math.cos(a)*radius+1.3, -Math.sin(a)*radius); }
-    for (let j=0;j<n;j++) { const a=j, b=j+1, w=n+1; indices.push(a,b,w+b, a,w+b,w+a); }
-    const geom=new THREE.BufferGeometry(); geom.setAttribute('position',new THREE.Float32BufferAttribute(verts,3)); geom.setIndex(indices); geom.computeVertexNormals();
-    const mesh=new THREE.Mesh(geom, choose(rockMats)); mesh.receiveShadow=true; group.add(mesh);
-    for (let j=0;j<3;j++) { const pebble=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.12,.33),0),choose(rockMats)); const a=rand(0,Math.PI), r=rand(4.75,5.15); pebble.position.set(rand(-3.8,3.8),1.3+Math.cos(a)*r,-Math.sin(a)*r); pebble.rotation.set(rand(0,TAU),rand(0,TAU),rand(0,TAU)); group.add(pebble); }
+    const group = new THREE.Group(); group.position.x = i * TUNNEL_SEGMENT_LENGTH - 16;
+    const data = tunnelSegmentMesh(tunnelSectionRing[i], tunnelSectionRing[(i + 1) % TUNNEL_SEGMENTS], Math.random);
+    const mesh=new THREE.Mesh(meshGeometry(data), choose(rockMats)); mesh.receiveShadow=true; group.add(mesh);
+    group.add(new THREE.Mesh(meshGeometry({ positions:data.positions, indices:data.rimIndices }), rimMat));
+    data.pebbles.forEach((p) => { const pebble=new THREE.Mesh(new THREE.DodecahedronGeometry(p.radius,0),choose(rockMats)); pebble.position.set(p.x,p.y,p.z); pebble.rotation.set(...p.rotation); group.add(pebble); });
     return group;
   }
-  const tunnel = Array.from({length:18}, (_,i) => { const g=makeTunnelSegment(i); scene.add(g); return g; });
+  const tunnel = Array.from({length:TUNNEL_SEGMENTS}, (_,i) => { const g=makeTunnelSegment(i); scene.add(g); return g; });
 
-  function pillarPart(height, y, seed) {
-    const group = new THREE.Group(); group.position.y=y;
-    const geo = new THREE.CylinderGeometry(.62 + seed*.1, .78 + seed*.12, height, 7, 3, false); geo.rotateY(seed*2);
-    const mesh = new THREE.Mesh(geo, choose(rockMats)); mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh);
-    for(let i=0;i<3;i++){ const cap=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.18,.4),0),choose(rockMats)); cap.position.set(rand(-.55,.55),rand(-height/2,height/2),rand(-.35,.35)); cap.scale.y=rand(.6,1.8); group.add(cap); }
+  // Pillar part from its collision outline (obstacleParts), so the drawn edge is the edge the body hits.
+  function makePillarPart(part) {
+    const data = pillarMesh(part, Math.random), group = new THREE.Group();
+    const mesh = new THREE.Mesh(meshGeometry(data), choose(rockMats)); mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh);
+    data.stones.forEach((st) => { const stone=new THREE.Mesh(new THREE.DodecahedronGeometry(st.radius,0),choose(rockMats)); stone.position.set(st.x,st.y,st.z); stone.scale.y=st.scaleY; stone.rotation.set(...st.rotation); group.add(stone); });
     return group;
   }
-  const PILLAR_HEIGHT = 4.2; // syncObstacles puts the inner end of each pillar on the model's gap edge
-  function makeObstacle() { const g=new THREE.Group(); g.add(pillarPart(PILLAR_HEIGHT,0,rand(.1,.9)),pillarPart(PILLAR_HEIGHT,0,rand(.1,.9))); scene.add(g); return g; }
+  function makeObstacle() { const g=new THREE.Group(); scene.add(g); return g; }
+  // Rebuilds an obstacle's pillars around the model outline at x = 0; syncObstacles moves the group to the model x.
+  function shapeObstacle(g, d) {
+    g.children.forEach((part) => part.traverse((o) => { if (o.geometry) o.geometry.dispose(); }));
+    g.clear();
+    obstacleParts({ ...d, x: 0 }).forEach((part) => g.add(makePillarPart(part)));
+    g.userData.shape = shapeKey(d);
+  }
+  const shapeKey = (d) => `${d.gapY}|${d.gapHeight}|${d.halfWidth}`;
   const obstacles=Array.from({length:OBSTACLE_COUNT},()=>makeObstacle());
 
   const particleGeo = new THREE.IcosahedronGeometry(.045,0);
@@ -104,31 +119,40 @@ import { OBSTACLE_COUNT, createFrameClock, createGame, startRun } from './game-c
   function writeBestScore(value){ try { localStorage.setItem('flappyBatBest',String(value)); } catch (error) { /* Keep the in-memory best score when storage is unavailable. */ } }
   // The model owns state, bat physics, score and obstacles; this file renders it and runs effects.
   const game=createGame(), clock=createFrameClock();
-  let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, shownScore=0, scrolled=0;
+  let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, restY=CAVE_FLOOR, shownScore=0, scrolled=0;
+  const crashPoint = new THREE.Vector3();
   bestEl.textContent=best;
   function showScore(){ if(game.score===shownScore) return; shownScore=game.score; scoreEl.textContent=shownScore; }
-  function syncObstacles(){ obstacles.forEach((o,i)=>{ const d=game.obstacles[i], offset=d.gapHeight/2+PILLAR_HEIGHT/2; o.position.set(d.x,d.gapY,0); o.children[0].position.y=offset; o.children[1].position.y=-offset; }); }
+  function syncObstacles(){ obstacles.forEach((o,i)=>{ const d=game.obstacles[i]; if(o.userData.shape!==shapeKey(d)) shapeObstacle(o,d); o.position.x=d.x; }); }
+  // Centre height where the falling bat comes to rest after a crash: on the floor, or on a lower pillar right under it.
+  function restHeight(){ let surface=CAVE_FLOOR; game.obstacles.forEach((o)=>obstacleParts(o).forEach((p)=>{ if(p.side==='lower'&&p.edgeY<game.bat.y&&p.edgeY>surface&&Math.abs(p.x-game.bat.x)<p.halfWidth+BAT_HALF_WIDTH) surface=p.edgeY; })); return surface+BAT_HALF_HEIGHT; }
   function clearEffects(){ shake=0; fallVelocity=0; bat.rotation.z=0; particles.forEach(p=>{p.life=0;p.mesh.visible=false;}); }
   function setReady(){ game.reset(); clearEffects(); scrolled=0; showScore(); bat.position.set(BAT_X,BAT_START_Y,0);message.textContent='';showScreen('ready'); }
   function start(){ if(!startRun(game,clock)) return; showScreen('running'); }
-  // Runs once when the model reports a crash: effects, best score and the over screen.
-  function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; bat.position.y=game.bat.y; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
+  // Runs once when the model reports a crash. The bat is shown in the pose that touched (model position and tilt),
+  // and the dust bursts from the touched point. Then come the best score and the over screen.
+  function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; restY=Math.min(restHeight(),game.bat.y); bat.position.y=game.bat.y; bat.rotation.z=bodyPitch(game.bat.velocity); crashPoint.set(game.crash.x,game.crash.y,0); burst(crashPoint,38,0xd87554,3.2); burst(crashPoint,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
   function restart(){ setReady(); start(); }
   // `ready` shows the start guide and `over` a compact crash result. While running, the overlay fades out
   // as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
   function showScreen(phase){ const running=phase==='running'; if(!running) overlay.dataset.phase=phase; overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
   function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span>`; }
   function flap(){ if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else game.flap(); }
-  function updateBat(dt){ if(game.state==='ready'){bat.position.y=game.bat.y+Math.sin(elapsed*2.1)*.12;} else if(game.state==='running'){bat.position.y=game.bat.y;} else { fallVelocity-=7*dt;bat.position.y+=fallVelocity*dt; bat.rotation.z+=dt*2.5; }
-    const pitch=clamp((game.state==='over'?fallVelocity:game.bat.velocity)*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=game.state==='over'?0:Math.sin(elapsed*10)*.38 + (game.state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
+  // While running the bat shows exactly the model pose that collision tests: centre height and bodyPitch tilt.
+  // After a crash it falls as an effect and stops on the floor or the lower pillar under it.
+  function updateBat(dt){ if(game.state==='running'){bat.position.y=game.bat.y; bat.rotation.z=bodyPitch(game.bat.velocity);}
+    else { if(game.state==='ready'){bat.position.y=game.bat.y+Math.sin(elapsed*2.1)*.12;} else { fallVelocity-=7*dt; bat.position.y+=fallVelocity*dt; if(bat.position.y<=restY){bat.position.y=restY; fallVelocity=0;} bat.rotation.z+=dt*2.5; }
+      bat.rotation.z += (bodyPitch(game.state==='over'?fallVelocity:0)-bat.rotation.z)*Math.min(dt*8,1); }
+    const flap=game.state==='over'?0:Math.sin(elapsed*10)*.38 + (game.state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
   function updateWorld(dt){ const moved=game.distance-scrolled; scrolled=game.distance;
-    tunnel.forEach(g=>{g.position.x-=moved;if(g.position.x<-16)g.position.x+=tunnel.length*8;});
+    tunnel.forEach(g=>{g.position.x-=moved;if(g.position.x<-16)g.position.x+=tunnel.length*TUNNEL_SEGMENT_LENGTH;});
     syncObstacles();
     if(Math.random()<dt*10) dustTrail();
   }
   function updateParticles(dt){particles.forEach(p=>{if(!p.mesh.visible)return;p.life-=dt;if(p.life<=0){p.mesh.visible=false;return;}p.vel.y+=p.gravity*dt;p.mesh.position.addScaledVector(p.vel,dt);p.mesh.rotation.x+=dt*4;p.mesh.material.opacity=clamp(p.life,0,1)*.65;});}
   // The model consumes frame time in fixed ticks; effects use the same clamped frame time.
-  function render(now){ const dt=clock.frame(now);elapsed+=dt; const wasRunning=game.state==='running'; game.advance(dt); if(wasRunning&&game.state==='over') gameOver(); showScore(); updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
+  // The crash frame does not move the bat, so the first over frame shows the touching pose.
+  function render(now){ const dt=clock.frame(now);elapsed+=dt; const wasRunning=game.state==='running'; game.advance(dt); const crashed=wasRunning&&game.state==='over'; if(crashed) gameOver(); showScore(); updateBat(crashed?0:dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
   // Fixed side view of the play plane: no height follow and no tilt, so gaps keep their screen height and pillars stay vertical.
   // The crash shake is a brief jitter (~.13 s half-life) and is off for reduced-motion users.
   function placeCamera(){ const s=reducedMotion.matches?0:shake*SHAKE_GAIN; camera.position.set(bat.position.x+view.x+Math.sin(elapsed*53)*s, view.y+Math.sin(elapsed*41+1)*s, view.distance); }
