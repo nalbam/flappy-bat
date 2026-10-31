@@ -1,11 +1,14 @@
 /* Flappy Bat — procedural Three.js game, no build step required. */
+import { bindInput } from './input.mjs';
+import { frameView } from './view.mjs';
+
 (() => {
   'use strict';
   const THREE = window.THREE;
   if (!THREE) return;
 
   const $ = (id) => document.getElementById(id);
-  const sceneHost = $('scene'), scoreEl = $('score'), bestEl = $('best');
+  const stage = $('game'), sceneHost = $('scene'), scoreEl = $('score'), bestEl = $('best');
   const overlay = $('overlay'), message = $('message'), startButton = $('startButton');
   const restartButton = $('restartButton'), touchHint = $('touchHint');
   const TAU = Math.PI * 2, MAX_PARTICLES = 230;
@@ -13,15 +16,17 @@
   const rand = (a, b) => a + Math.random() * (b - a);
   const choose = (a) => a[Math.floor(Math.random() * a.length)];
 
-  const CAM_X = 4; // camera is offset ahead of the bat so it sits in the left third
+  const CAM_FOV = 65;
+  // Fog density was tuned for a camera 11 units from the play plane; it is rescaled to the fitted distance.
+  const FOG_DENSITY = .027, FOG_REFERENCE_DISTANCE = 11;
+  const SHAKE_GAIN = .3; // camera offset in world units per unit of `shake`
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  let view; // camera framing from frameView(), refreshed by onResize()
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x171116);
-  scene.fog = new THREE.FogExp2(0x171116, 0.027);
-  const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, .1, 130);
-  camera.position.set(CAM_X, 3.2, 11);
+  scene.fog = new THREE.FogExp2(0x171116, FOG_DENSITY);
+  const camera = new THREE.PerspectiveCamera(CAM_FOV, innerWidth / innerHeight, .1, 130);
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
-  renderer.setSize(innerWidth, innerHeight);
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -98,9 +103,14 @@
   bestEl.textContent=best;
   function resetObstacles(){ obstacles.forEach((o,i)=>{o.position.x=24+i*19;o.position.z=0;o.rotation.y=0;o.userData.active=i<7;o.userData.passed=false;o.userData.gap=rand(-.7,1.8); o.position.y=o.userData.gap; }); }
   resetObstacles();
-  function setReady(){ state='ready'; score=0;scoreEl.textContent='0';velocity=0;runTime=0;bat.position.set(0,2.2,0);overlay.classList.remove('hidden');overlay.classList.add('ready');message.innerHTML='동굴 사이를 날아<br />최고 점수를 기록하세요.';startButton.innerHTML='날아오르기 <span>SPACE</span>';restartButton.classList.remove('visible');touchHint.classList.remove('off');resetObstacles(); }
-  function start(){ if(state==='running') return; state='running';overlay.classList.add('hidden');restartButton.classList.remove('visible');touchHint.classList.add('off'); velocity=2.25; }
-  function gameOver(){ if(state!=='running') return; state='over'; shake=.62; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); if(score>best){best=score;writeBestScore(best);bestEl.textContent=best;} message.innerHTML=`비행 기록 <strong>${score}</strong><br />조금 더 멀리 날아볼까요?`;startButton.textContent='다시 날기';overlay.classList.remove('hidden');restartButton.classList.add('visible');touchHint.classList.add('off'); }
+  function setReady(){ state='ready'; score=0;scoreEl.textContent='0';velocity=0;runTime=0;bat.position.set(0,2.2,0);message.textContent='';showScreen('ready');resetObstacles(); }
+  function start(){ if(state==='running') return; state='running';showScreen('running'); velocity=2.25; }
+  function gameOver(){ if(state!=='running') return; state='over'; shake=.62; burst(bat.position,38,0xd87554,3.2); burst(bat.position,26,0x8c6570,2.2); const record=score>best; if(record){best=score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
+  function restart(){ setReady(); start(); }
+  // `ready` shows the start guide and `over` a compact crash result. While running, the overlay fades out
+  // as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
+  function showScreen(phase){ const running=phase==='running'; if(!running) overlay.dataset.phase=phase; overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
+  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span>`; }
   function flap(){ if(state==='ready') start(); else if(state==='over'){setReady();start();} else velocity=5.1; }
   function updateBat(dt){ if(state==='ready'){bat.position.y=2.2+Math.sin(elapsed*2.1)*.12;} else if(state==='running'){velocity-=10.4*dt;bat.position.y+=velocity*dt; if(bat.position.y>5.5||bat.position.y<-.8) gameOver(); } else { velocity-=7*dt;bat.position.y+=velocity*dt; bat.rotation.z+=dt*2.5; }
     const pitch=clamp(velocity*.045,-.34,.32); bat.rotation.z += (pitch-bat.rotation.z)*Math.min(dt*8,1); const flap=state==='over'?0:Math.sin(elapsed*10)*.38 + (state==='ready'?0:.16); bat.userData.wings.forEach((w,i)=>{w.rotation.z=(i?1:-1)*(.16+flap);w.rotation.x=Math.sin(elapsed*7+i)*.06;}); bat.userData.light.intensity=1.7+Math.sin(elapsed*7)*.35; }
@@ -110,9 +120,12 @@
     if(Math.random()<dt*10) dustTrail();
   }
   function updateParticles(dt){particles.forEach(p=>{if(!p.mesh.visible)return;p.life-=dt;if(p.life<=0){p.mesh.visible=false;return;}p.vel.y+=p.gravity*dt;p.mesh.position.addScaledVector(p.vel,dt);p.mesh.rotation.x+=dt*4;p.mesh.material.opacity=clamp(p.life,0,1)*.65;});}
-  function render(now){ const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt; updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.035,dt); const targetY=bat.position.y+1.0; camera.position.y+=(targetY-camera.position.y)*Math.min(dt*3.4,1); camera.position.x+=(CAM_X+Math.sin(elapsed*1.4)*shake-camera.position.x)*Math.min(dt*10,1); camera.lookAt(CAM_X,bat.position.y+.1,0); renderer.render(scene,camera); requestAnimationFrame(render); }
-  function onResize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));}
-  startButton.addEventListener('click',flap); restartButton.addEventListener('click',()=>{setReady();});
-  addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();flap();}}); renderer.domElement.addEventListener('pointerdown',e=>{if(e.button===0)flap();}); addEventListener('resize',onResize);
+  function render(now){ const dt=Math.min((now-last)/1000,.04);last=now;elapsed+=dt; updateBat(dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
+  // Fixed side view of the play plane: no height follow and no tilt, so gaps keep their screen height and pillars stay vertical.
+  // The crash shake is a brief jitter (~.13 s half-life) and is off for reduced-motion users.
+  function placeCamera(){ const s=reducedMotion.matches?0:shake*SHAKE_GAIN; camera.position.set(bat.position.x+view.x+Math.sin(elapsed*53)*s, view.y+Math.sin(elapsed*41+1)*s, view.distance); }
+  function onResize(){ const aspect=innerWidth/innerHeight; view=frameView(aspect,CAM_FOV); camera.aspect=aspect; camera.updateProjectionMatrix(); scene.fog.density=FOG_DENSITY*FOG_REFERENCE_DISTANCE/view.distance; renderer.setPixelRatio(Math.min(devicePixelRatio,1.7)); renderer.setSize(innerWidth,innerHeight); placeCamera(); }
+  bindInput({ win:window, doc:document, stage, onFlap:flap, buttons:[[startButton,flap],[restartButton,restart]] });
+  addEventListener('resize',onResize); onResize();
   requestAnimationFrame(render);
 })();

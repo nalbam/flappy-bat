@@ -9,26 +9,29 @@
 </head>
 <body>
   <main id="game" aria-label="Flappy Bat game">
-    <div id="hud" aria-live="polite">
-      <div class="brand"><span class="brand-mark">✦</span><span>FLAPPY BAT</span></div>
+    <div id="hud">
+      <div class="brand" aria-hidden="true"><span class="brand-mark">✦</span><span>FLAPPY BAT</span></div>
       <div class="score-card"><span class="label">SCORE</span><strong id="score">0</strong></div>
       <div class="best-card"><span class="label">BEST</span><strong id="best">0</strong></div>
     </div>
     <div id="scene" aria-hidden="true"></div>
-    <section id="overlay" class="overlay ready" aria-labelledby="title">
+    <section id="overlay" class="overlay" data-phase="ready" aria-labelledby="title">
       <div class="panel">
-        <div class="eyebrow">NIGHTFLIGHT // 01</div>
-        <h1 id="title">Flappy <em>Bat</em></h1>
-        <p id="message">동굴 사이를 날아<br />최고 점수를 기록하세요.</p>
-        <button id="startButton" type="button">날아오르기 <span>SPACE</span></button>
-        <div class="tip">클릭 · 탭 · Space 로 박자를 맞추세요</div>
+        <div class="eyebrow ready-only">NIGHTFLIGHT // 01</div>
+        <div class="eyebrow over-only">CRASH // 충돌</div>
+        <h1 id="title" class="ready-only">Flappy <em>Bat</em></h1>
+        <p class="lead ready-only">기둥 사이 틈으로 날아<br />최고 점수를 기록하세요.</p>
+        <p id="message" class="result" role="status"></p>
+        <button id="startButton" class="ready-only" type="button">날아오르기 <kbd>SPACE</kbd></button>
+        <button id="restartButton" class="over-only" type="button"><span aria-hidden="true">↻</span> 다시 시작 <kbd>SPACE</kbd></button>
+        <div class="tip ready-only">Space · ↑ · 클릭 · 탭으로 날갯짓</div>
+        <div class="tip over-only">Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요</div>
       </div>
     </section>
-    <button id="restartButton" class="restart" type="button" aria-label="Restart game">↻ <span>다시 시작</span></button>
-    <div id="touchHint" class="touch-hint">TAP TO FLAP</div>
+    <div id="touchHint" class="touch-hint" aria-hidden="true">TAP TO FLAP</div>
     <div id="vignette"></div>
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="main.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>
