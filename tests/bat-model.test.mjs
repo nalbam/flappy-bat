@@ -112,6 +112,24 @@ test('the pose follows elapsed time, not the frame rate', () => {
   }
 });
 
+test('after a flap the pose still follows elapsed time, not how frames split it', () => {
+  // Each flap starts the quicker beat; the same time after it is played at 30 Hz, 144 Hz and with a
+  // long frame, so each run passes the end of the quicker beat at a different frame split.
+  const splits = [(m, s) => play(m, s, 1 / 30), (m, s) => play(m, s, 1 / 144),
+    (m, s) => { m.step(0.01, 'running', 0); m.step(0.09, 'running', 0); return play(m, s - 0.1, 1 / 60); }];
+  for (const before of [0.06, 0.12, 0.2, 0.26]) {
+    for (const after of [0.15, 0.4, 1]) {
+      const [first, ...others] = splits.map((split) => {
+        const motion = createBatMotion();
+        play(motion, before, 1 / 60);
+        motion.flap();
+        return split(motion, after);
+      });
+      for (const other of others) assert.ok(maxMove(first.wing, other.wing) < 1e-9, `flap ${before}s into the beat, ${after}s later`);
+    }
+  }
+});
+
 test('a flap starts the downstroke soon without a jump in the pose', () => {
   const MS = 0.00025; // fine steps, so a jump would show as a large move between two of them
   for (const before of [0.03, 0.06, 0.1, 0.16, 0.22, 0.28]) {

@@ -80,9 +80,12 @@ export function createBatMotion() {
       if (state === 'over') crash = Math.min(1, crash + dt / FOLD_SECONDS);
       else {
         crash = 0;
-        const beat = state === 'ready' ? BEAT_SECONDS.ready : BEAT_SECONDS.running;
-        phase += dt / (rush ? RUSH_SECONDS : beat);
-        if (phase >= 1) { phase %= 1; rush = false; }
+        let left = dt;
+        if (rush) { // the quick beat uses only the time to the end of its beat; the rest plays normally
+          const toEnd = (1 - phase) * RUSH_SECONDS;
+          if (left < toEnd) { phase += left / RUSH_SECONDS; left = 0; } else { phase = 0; rush = false; left -= toEnd; }
+        }
+        phase = (phase + left / (state === 'ready' ? BEAT_SECONDS.ready : BEAT_SECONDS.running)) % 1;
       }
       follow += (tilt - follow) * (1 - Math.exp(-dt / FOLLOW_SECONDS));
       const lagging = follow - tilt;
