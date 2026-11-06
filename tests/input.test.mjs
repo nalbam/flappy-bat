@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bindInput } from '../docs/input.mjs';
+import { CAVE_FLOOR, FLAP_VELOCITY } from '../docs/game-rules.mjs';
+import { createFrameClock, createGame, resumeRun, startRun, togglePause } from '../docs/game-core.mjs';
 
 // Minimal DOM stand-ins: EventTarget plus the `contains` lookup the stage uses.
 class FakeElement extends EventTarget {
@@ -158,6 +160,159 @@ test('a key held through a crash does not restart; a new press does', () => {
   assert.equal(game.state, 'over', 'releasing the key does not restart');
   keydown(win, 'Space');
   assert.deepEqual(game.log, ['start', 'flap', 'retry']);
+});
+
+for (const code of ['KeyP', 'Escape']) {
+  test(`${code}: one pause action per physical press, repeats and held keys ignored`, () => {
+    const win = new EventTarget();
+    const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+    const calls = [];
+    bindInput({ win, doc, stage: new FakeElement(), onFlap: () => calls.push('flap'), onPause: () => calls.push('pause') });
+    assert.equal(keydown(win, code, { key: code === 'KeyP' ? 'p' : 'Escape' }).defaultPrevented, true);
+    for (let i = 0; i < 5; i++) keydown(win, code, { repeat: true });
+    keydown(win, code); // a second keydown without keyup
+    assert.deepEqual(calls, ['pause']);
+    keyup(win, code);
+    keydown(win, code);
+    assert.deepEqual(calls, ['pause', 'pause'], 'a new press after keyup pauses again');
+    keyup(win, code);
+    for (const modifier of ['ctrlKey', 'altKey', 'metaKey']) {
+      assert.equal(keydown(win, code, { [modifier]: true }).defaultPrevented, false, `${modifier} shortcut left alone`);
+    }
+    assert.deepEqual(calls, ['pause', 'pause']);
+  });
+}
+
+test('a hidden tab calls onHidden once per hide; becoming visible calls nothing', () => {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const calls = [];
+  bindInput({ win, doc, stage: new FakeElement(), onFlap: () => calls.push('flap'), onHidden: () => calls.push('hidden') });
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(calls, []);
+  doc.hidden = true;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  doc.hidden = false;
+  doc.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(calls, ['hidden']);
+});
+
+// The real model, frame clock and input binding, wired as main.js wires them: a flap key starts in 'ready'
+// and flaps otherwise (the model refuses it while paused), a pause key toggles, a hidden tab pauses and
+// the `계속` button resumes.
+function pausableGame() {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const canvas = new FakeElement();
+  const continueButton = new FakeElement();
+  const stage = new FakeElement([canvas, continueButton]);
+  const game = createGame({ seed: 12345 });
+  const clock = createFrameClock();
+  const log = [];
+  let now = 1000;
+  bindInput({
+    win, doc, stage,
+    onFlap: () => log.push(game.state === 'ready' ? startRun(game, clock) && 'start' : game.flap() && 'flap'),
+    onPause: () => log.push(togglePause(game, clock) && game.state),
+    onHidden: () => log.push(game.pause() && 'paused'),
+    buttons: [[continueButton, () => log.push(resumeRun(game, clock) && 'resumed')]],
+  });
+  const frame = (ms = 1000 / 60) => game.advance(clock.frame((now += ms)));
+  const model = () => JSON.stringify({
+    state: game.state, tick: game.tick, bat: game.bat, score: game.score, runTime: game.runTime,
+    distance: game.distance, seed: game.seed, obstacles: game.obstacles,
+  });
+  return { win, doc, stage, canvas, continueButton, game, log, frame, model };
+}
+
+test('real game: flap keys, taps and Space on the focused continue button neither flap nor resume while paused', () => {
+  const { win, doc, stage, canvas, continueButton, game, log, frame, model } = pausableGame();
+  keydown(win, 'Space'); keyup(win, 'Space');
+  frame(0);
+  for (let i = 0; i < 20; i++) frame();
+  keydown(win, 'KeyP');
+  assert.equal(game.state, 'paused');
+  const paused = model();
+
+  for (let i = 0; i < 3; i++) {
+    keydown(win, 'Space'); keyup(win, 'Space');
+    keydown(win, 'ArrowUp'); keyup(win, 'ArrowUp');
+    fire(stage, 'pointerdown', { button: 0, target: canvas });
+    keydown(win, 'KeyP', { repeat: true });
+    keydown(win, 'KeyP');
+    frame(); frame(5000);
+  }
+  doc.activeElement = continueButton;
+  const down = keydown(win, 'Space');
+  const up = keyup(win, 'Space');
+  assert.equal(down.defaultPrevented && up.defaultPrevented, true, 'Space cannot click the focused continue button');
+  assert.equal(game.state, 'paused');
+  assert.equal(model(), paused, 'nothing in the model moved while paused');
+  // Each Space, ArrowUp and tap reached the model and was refused (false); the held KeyP never toggled.
+  assert.deepEqual(log, ['start', 'paused', ...Array(10).fill(false)]);
+
+  keyup(win, 'KeyP');
+  keydown(win, 'Escape');
+  assert.equal(game.state, 'running');
+  assert.equal(frame(3000), 0, 'the first frame after the resume is 0 s');
+  assert.equal(model(), paused.replace('"state":"paused"', '"state":"running"'), 'resume adds no flap and no reset');
+  assert.ok(frame() > 0, 'the flight goes on');
+  assert.ok(game.bat.velocity < FLAP_VELOCITY);
+});
+
+test('real game: the continue button resumes once by click, tap or Enter', () => {
+  const { win, doc, stage, continueButton, game, log, frame, model } = pausableGame();
+  keydown(win, 'Space'); keyup(win, 'Space');
+  frame(0); frame();
+  for (const way of ['click', 'tap', 'Enter']) {
+    keydown(win, 'Escape'); keyup(win, 'Escape');
+    assert.equal(game.state, 'paused', way);
+    const paused = model();
+    if (way === 'tap') fire(stage, 'pointerdown', { button: 0, target: continueButton });
+    if (way === 'Enter') {
+      doc.activeElement = continueButton;
+      assert.equal(fire(win, 'keydown', { code: 'Enter', key: 'Enter', repeat: false }).defaultPrevented, false, 'Enter becomes a native click');
+      for (let i = 0; i < 3; i++) fire(win, 'keydown', { code: 'Enter', key: 'Enter', repeat: true });
+    }
+    fire(continueButton, 'click', { detail: way === 'Enter' ? 0 : 1 });
+    assert.equal(game.state, 'running', way);
+    assert.equal(frame(), 0, `${way}: first frame after the resume`);
+    assert.equal(model(), paused.replace('"state":"paused"', '"state":"running"'), `${way}: no flap`);
+    frame();
+  }
+  assert.deepEqual(log, ['start', 'paused', 'resumed', 'paused', 'resumed', 'paused', 'resumed']);
+});
+
+test('real game: hiding the tab pauses a run, showing it does not resume, ready and over ignore both', () => {
+  const { win, doc, game, log, frame, model } = pausableGame();
+  const hide = () => { doc.hidden = true; doc.dispatchEvent(new Event('visibilitychange')); };
+  const show = () => { doc.hidden = false; doc.dispatchEvent(new Event('visibilitychange')); };
+
+  const ready = model();
+  hide(); show(); keydown(win, 'KeyP'); keyup(win, 'KeyP'); keydown(win, 'Escape'); keyup(win, 'Escape');
+  frame(); frame();
+  assert.equal(model(), ready, 'ready: hidden, visible and pause keys change nothing');
+
+  keydown(win, 'Space'); keyup(win, 'Space');
+  frame(0); frame();
+  hide();
+  assert.equal(game.state, 'paused');
+  const paused = model();
+  show();
+  for (let i = 0; i < 5; i++) frame();
+  assert.equal(model(), paused, 'becoming visible does not resume');
+  keydown(win, 'KeyP'); keyup(win, 'KeyP');
+  assert.equal(game.state, 'running');
+
+  assert.equal(frame(), 0, 'first frame after the resume');
+  game.bat.y = CAVE_FLOOR - 1;
+  frame();
+  assert.equal(game.state, 'over');
+  const over = model();
+  hide(); show(); keydown(win, 'Escape'); keyup(win, 'Escape');
+  frame();
+  assert.equal(model(), over, 'over: hidden, visible and pause keys change nothing');
+  assert.deepEqual(log, [false, false, false, 'start', 'paused', 'running', false, false]);
 });
 
 test('unbind removes every listener', () => {

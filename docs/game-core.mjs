@@ -20,7 +20,8 @@ export function hasCleared(bat, obstacle) {
  * run the same layout, a function is called by every reset() for the seed of the new run.
  * The default draws a fresh seed per run from the platform's cryptographic random source.
  *
- * - `state` is 'ready', 'running' or 'over'. Only 'running' advances.
+ * - `state` is 'ready', 'running', 'paused' or 'over'. Only 'running' advances. 'paused' keeps
+ *   the run exactly as it stopped; only resume() leaves it, back to 'running'.
  * - `seed` is the seed of the current run; createObstacleGenerator(seed) repeats its obstacles.
  * - `obstacles` holds OBSTACLE_COUNT descriptors `{ index, x, gapY, gapHeight, halfWidth, passed }`,
  *   `index` being the order in which the run's generator made them. The array and its objects
@@ -75,11 +76,29 @@ export function createGame({ seed = randomSeed } = {}) {
     },
 
     // Sets the upward velocity once. In 'ready' it also starts the run, so the
-    // start input and a normal flap give the same impulse. Returns false in 'over'.
+    // start input and a normal flap give the same impulse. Returns false in 'paused'
+    // and 'over', which change nothing.
     flap() {
-      if (game.state === 'over') return false;
+      if (game.state !== 'ready' && game.state !== 'running') return false;
       game.state = 'running';
       game.bat.velocity = FLAP_VELOCITY;
+      return true;
+    },
+
+    // 'running' -> 'paused' and true; in other states nothing changes and it returns false.
+    // The bat, the obstacles, the score and the tick count stay as they are.
+    pause() {
+      if (game.state !== 'running') return false;
+      game.state = 'paused';
+      game.accumulator = 0;
+      return true;
+    },
+
+    // 'paused' -> 'running' and true, with no flap and no reset; false in other states.
+    // Use resumeRun() so the frame clock also restarts.
+    resume() {
+      if (game.state !== 'paused') return false;
+      game.state = 'running';
       return true;
     },
 
@@ -119,9 +138,10 @@ export function createGame({ seed = randomSeed } = {}) {
     },
 
     // Consumes frame time in whole ticks and returns how many ran. A frame adds at
-    // most MAX_FRAME_SECONDS; the rest is dropped. Outside 'running' the time is
-    // discarded and nothing is banked. A frame that spans the start of a run still
-    // holds time from before it; startRun() restarts the frame clock to remove it.
+    // most MAX_FRAME_SECONDS; the rest is dropped. Outside 'running' (also in 'paused')
+    // the time is discarded and nothing is banked. A frame that spans the start or the
+    // resume of a run still holds time from before it; startRun() and resumeRun()
+    // restart the frame clock to remove it.
     advance(seconds) {
       if (game.state !== 'running') {
         game.accumulator = 0;
@@ -171,4 +191,23 @@ export function startRun(game, clock) {
   game.flap();
   clock.reset();
   return true;
+}
+
+/**
+ * Resumes a paused run and returns true; in other states it does nothing and returns false.
+ * Like startRun() the clock restarts, so the frame after the resume returns 0 and the time
+ * spent paused is never simulated. The resume gives no flap impulse.
+ */
+export function resumeRun(game, clock) {
+  if (!game.resume()) return false;
+  clock.reset();
+  return true;
+}
+
+/**
+ * The pause key: pauses a running run or resumes a paused one (through resumeRun()).
+ * Returns true when the state changed; in 'ready' and 'over' it does nothing and returns false.
+ */
+export function togglePause(game, clock) {
+  return game.state === 'paused' ? resumeRun(game, clock) : game.pause();
 }

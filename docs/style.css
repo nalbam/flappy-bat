@@ -15,7 +15,7 @@ body { font-family:ui-sans-serif, system-ui, sans-serif; color:var(--cream); }
 .overlay { position:absolute; z-index:6; inset:0; display:grid; place-items:center; transition:opacity .25s ease, visibility 0s; pointer-events:none; }
 .overlay.hidden { opacity:0; visibility:hidden; transition:opacity .15s ease, visibility 0s .15s; }
 .overlay.hidden .panel { pointer-events:none; }
-.overlay[data-phase="ready"] .over-only, .overlay[data-phase="over"] .ready-only { display:none; }
+.overlay:not([data-phase="ready"]) .ready-only, .overlay:not([data-phase="over"]) .over-only, .overlay:not([data-phase="paused"]) .paused-only { display:none; }
 .panel { width:min(440px, calc(100% - 40px)); padding:42px 32px 32px; text-align:center; border:1px solid rgba(244,238,225,.14); background:var(--panel); box-shadow:0 24px 80px rgba(0,0,0,.3); backdrop-filter:blur(18px); pointer-events:auto; }
 .eyebrow { color:var(--rust); font:500 10px/1 ui-monospace, SFMono-Regular, monospace; letter-spacing:.24em; margin-bottom:17px; }
 h1 { margin:0; font-size:clamp(46px, 11vw, 78px); letter-spacing:-.065em; line-height:.9; font-weight:800; }
@@ -37,6 +37,11 @@ button { font:600 14px ui-sans-serif, system-ui, sans-serif; color:var(--cream);
 .overlay[data-phase="over"] .panel { width:min(340px, calc(100% - 40px)); padding:26px 24px 22px; }
 .overlay[data-phase="over"] .eyebrow { margin-bottom:0; }
 .overlay[data-phase="over"] .tip { margin-top:14px; }
+.overlay[data-phase="paused"] .panel { width:min(360px, calc(100% - 40px)); padding:26px 24px 22px; }
+h2 { margin:0; font-size:34px; letter-spacing:-.04em; line-height:1; font-weight:800; }
+.overlay[data-phase="paused"] .lead { margin:14px 0 20px; }
+.lead kbd { color:var(--cream); font:600 12px ui-monospace, SFMono-Regular, monospace; padding:1px 6px; border:1px solid rgba(244,238,225,.3); }
+.nowrap { white-space:nowrap; }
 .touch-hint { position:absolute; z-index:4; bottom:30px; left:50%; transform:translateX(-50%); color:rgba(244,238,225,.32); font:9px ui-monospace, SFMono-Regular, monospace; letter-spacing:.22em; transition:opacity .3s; pointer-events:none; }
 .touch-hint.off { opacity:0; }
 @media (max-width:600px) { #hud { padding:18px 16px; gap:8px; } .brand { font-size:9px; padding-top:10px; } .score-card,.best-card { min-width:62px; padding:9px 11px; } .score-card strong,.best-card strong { font-size:21px; } .panel { padding:34px 23px 27px; } .tip { font-size:9px; } }

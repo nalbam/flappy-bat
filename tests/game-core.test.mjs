@@ -6,7 +6,9 @@ import {
   MAX_SPEED_BONUS, TICK, TICK_RATE, bodyPitch, speedAt,
 } from '../docs/game-rules.mjs';
 import { bodyExtents } from '../docs/collision.mjs';
-import { OBSTACLE_COUNT, OBSTACLE_RECYCLE_X, createFrameClock, createGame, startRun } from '../docs/game-core.mjs';
+import {
+  OBSTACLE_COUNT, OBSTACLE_RECYCLE_X, createFrameClock, createGame, resumeRun, startRun, togglePause,
+} from '../docs/game-core.mjs';
 import { FIRST_OBSTACLE_X, createObstacleGenerator } from '../docs/obstacle-generator.mjs';
 
 const EPS = 1e-9;
@@ -182,21 +184,111 @@ test('frame clock: no time on the first frame or after a tab returns, clamped lo
   assert.ok(Math.abs(clock.frame(60020) - 0.02) < EPS);
 });
 
-test('a hidden tab resumes the run where it stopped', () => {
+test('a hidden tab pauses the run and becoming visible does not resume it', () => {
+  // main.js: a hidden visibilitychange calls game.pause() and every visibilitychange resets the clock.
   const game = createGame({ seed: 5 });
   const clock = createFrameClock();
   let now = 0;
-  game.flap();
+  startRun(game, clock);
   for (let i = 0; i <= 30; i++) game.advance(clock.frame((now = i * 1000 / 60)));
   assert.equal(game.tick, 60);
   const hidden = snapshot(game);
 
-  clock.reset(); // visibilitychange
+  clock.reset(); // hidden
+  assert.equal(game.pause(), true);
   now += 30000;
-  assert.equal(game.advance(clock.frame(now)), 0);
-  assertSameRun(snapshot(game), hidden, 'first frame after the tab returns');
+  game.advance(clock.frame(now));
+  clock.reset(); // visible again
+  for (let i = 1; i <= 10; i++) assert.equal(game.advance(clock.frame((now += 1000 / 60))), 0);
+  assert.equal(game.state, 'paused', 'becoming visible does not resume');
+  assertSameRun(snapshot(game), { ...hidden, state: 'paused' }, 'while paused after the tab returns');
+
+  assert.equal(resumeRun(game, clock), true);
+  assert.equal(game.advance(clock.frame((now += 5000))), 0, 'first frame after the resume');
+  assertSameRun(snapshot(game), hidden, 'first frame after the resume');
   assert.equal(game.advance(clock.frame((now += 1000 / 60))), 2);
+});
+
+test('paused keeps the whole run: step, advance and flap change nothing', () => {
+  const game = createGame({ seed: 77 });
+  const clock = createFrameClock();
+  startRun(game, clock);
+  for (let i = 0; i < 90; i++) { autopilot(game, 0.6); game.step(); }
+  game.advance(TICK / 2); // part of a tick waits in the accumulator
+  const before = { ...snapshot(game), state: 'paused' };
+  const seed = game.seed;
+  const obstacleIdentity = [...game.obstacles];
+
+  assert.equal(game.pause(), true);
+  assert.equal(game.accumulator, 0, 'no frame time waits through the pause');
+  for (let i = 0; i < 50; i++) {
+    game.step();
+    assert.equal(game.advance(MAX_FRAME_SECONDS), 0);
+    assert.equal(game.flap(), false, 'a flap is refused while paused');
+  }
+  assert.equal(game.pause(), false, 'pausing twice changes nothing');
+  assert.equal(startRun(game, clock), false, 'the start input does not restart a paused run');
+  assertSameRun(snapshot(game), before, 'after paused steps, frames and flaps');
+  assert.equal(game.seed, seed);
+  assert.equal(game.accumulator, 0);
+  assert.equal(game.crash, null);
+  game.obstacles.forEach((o, i) => assert.equal(o, obstacleIdentity[i], 'obstacle objects are kept'));
+});
+
+test('resume continues the same flight with no flap, no reset and a 0 s first frame', () => {
+  const run = (pauseAtTick) => {
+    const game = createGame({ seed: 31 });
+    const clock = createFrameClock();
+    let now = 1000;
+    const frame = (ms) => game.advance(clock.frame((now += ms)));
+    clock.frame(now);
+    startRun(game, clock);
+    frame(0);
+    while (game.tick < 240 && game.state === 'running') {
+      if (game.tick === pauseAtTick) {
+        assert.equal(togglePause(game, clock), true, 'the pause key pauses');
+        assert.equal(game.state, 'paused');
+        const paused = snapshot(game);
+        frame(16); frame(40000); frame(100);
+        assert.equal(game.flap(), false);
+        assert.equal(togglePause(game, clock), true, 'the pause key resumes');
+        assert.equal(game.state, 'running');
+        assert.equal(frame(9000), 0, 'the first frame after the resume is 0 s');
+        assertSameRun(snapshot(game), { ...paused, state: 'running' }, 'resume');
+      }
+      if (game.tick % 50 === 0) game.flap();
+      frame(1000 / 120 + 1e-7);
+    }
+    return snapshot(game);
+  };
+  // A pause between two ticks does not change the flight: the run equals one that never paused.
+  const neverPaused = run(-1);
+  assert.ok(neverPaused.tick > 100, 'the flight reaches the pause tick');
+  assertSameRun(run(100), neverPaused, 'paused at tick 100 vs never paused');
+});
+
+test('pause keys do nothing in ready and over, and resume needs a paused run', () => {
+  const game = createGame({ seed: 9 });
+  const clock = createFrameClock();
+  const ready = snapshot(game);
+  assert.equal(togglePause(game, clock), false);
+  assert.equal(game.pause(), false);
+  assert.equal(resumeRun(game, clock), false);
+  assertSameRun(snapshot(game), ready, 'ready');
+
+  startRun(game, clock);
+  assert.equal(resumeRun(game, clock), false, 'a running game is not resumed');
   assert.equal(game.state, 'running');
+  game.bat.y = CAVE_FLOOR - 1;
+  game.step();
+  assert.equal(game.state, 'over');
+  const over = snapshot(game);
+  const crash = game.crash;
+  assert.equal(togglePause(game, clock), false);
+  assert.equal(game.pause(), false);
+  assert.equal(resumeRun(game, clock), false);
+  assertSameRun(snapshot(game), over, 'over');
+  assert.equal(game.crash, crash);
 });
 
 test('a start or restart simulates no frame time from before the start input', () => {

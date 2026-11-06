@@ -18,13 +18,18 @@
     <section id="overlay" class="overlay" data-phase="ready" aria-labelledby="title">
       <div class="panel">
         <div class="eyebrow ready-only">NIGHTFLIGHT // 01</div>
-        <div class="eyebrow over-only">CRASH // 충돌</div>
+        <div id="overTitle" class="eyebrow over-only">CRASH // 충돌</div>
+        <div class="eyebrow paused-only">PAUSED // 비행 멈춤</div>
         <h1 id="title" class="ready-only">Flappy <em>Bat</em></h1>
         <p class="lead ready-only">기둥 사이 틈으로 날아<br />최고 점수를 기록하세요.</p>
+        <h2 id="pauseTitle" class="paused-only">일시정지</h2>
+        <p class="lead paused-only"><kbd>P</kbd> 또는 <kbd>Esc</kbd>를 누르거나<br /><span class="nowrap">계속 버튼으로 이어서 납니다.</span></p>
         <p id="message" class="result" role="status"></p>
         <button id="startButton" class="ready-only" type="button">날아오르기 <kbd>SPACE</kbd></button>
         <button id="restartButton" class="over-only" type="button"><span aria-hidden="true">↻</span> 다시 시작 <kbd>SPACE</kbd></button>
-        <div class="tip ready-only">Space · ↑ · 클릭 · 탭으로 날갯짓</div>
+        <button id="continueButton" class="paused-only" type="button"><span aria-hidden="true">▶</span> 계속 <kbd>P · ESC</kbd></button>
+        <div class="tip ready-only">Space · ↑ · 클릭 · 탭으로 날갯짓 · P · Esc로 일시정지</div>
+        <div class="tip paused-only">일시정지 중에는 Space · ↑ · 클릭 · 탭으로 날갯짓하지 않아요</div>
         <div class="tip over-only">Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요</div>
       </div>
     </section>
