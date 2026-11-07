@@ -13,6 +13,7 @@
       <div class="brand" aria-hidden="true"><span class="brand-mark">✦</span><span>FLAPPY BAT</span></div>
       <div class="score-card"><span class="label">SCORE</span><strong id="score">0</strong></div>
       <div class="best-card"><span class="label">BEST</span><strong id="best">0</strong></div>
+      <div id="soundCard" class="sound-card" data-state="on"><span class="label">소리 <kbd>M</kbd></span><strong id="sound" aria-live="polite">켜짐</strong></div>
     </div>
     <div id="scene" aria-hidden="true"></div>
     <section id="overlay" class="overlay" data-phase="ready" aria-labelledby="title">
@@ -28,9 +29,9 @@
         <button id="startButton" class="ready-only" type="button">날아오르기 <kbd>SPACE</kbd></button>
         <button id="restartButton" class="over-only" type="button"><span aria-hidden="true">↻</span> 다시 시작 <kbd>SPACE</kbd></button>
         <button id="continueButton" class="paused-only" type="button"><span aria-hidden="true">▶</span> 계속 <kbd>P · ESC</kbd></button>
-        <div class="tip ready-only">Space · ↑ · 클릭 · 탭으로 날갯짓 · P · Esc로 일시정지</div>
-        <div class="tip paused-only">일시정지 중에는 Space · ↑ · 클릭 · 탭으로 날갯짓하지 않아요</div>
-        <div class="tip over-only">Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요</div>
+        <div class="tip ready-only">Space · ↑ · 클릭 · 탭으로 날갯짓 · P · Esc로 일시정지 · M으로 소리 켜기/끄기</div>
+        <div class="tip paused-only">일시정지 중에는 Space · ↑ · 클릭 · 탭으로 날갯짓하지 않아요 · M으로 소리 켜기/끄기</div>
+        <div class="tip over-only">Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기</div>
       </div>
     </section>
     <div id="touchHint" class="touch-hint" aria-hidden="true">TAP TO FLAP</div>
