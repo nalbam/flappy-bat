@@ -4,6 +4,8 @@
 export const FLAP_KEYS = Object.freeze(['Space', 'ArrowUp']);
 /** Keys that pause and resume, matched on `event.code` like FLAP_KEYS. */
 export const PAUSE_KEYS = Object.freeze(['KeyP', 'Escape']);
+/** Keys that switch the sound on and off, matched on `event.code` like FLAP_KEYS. */
+export const MUTE_KEYS = Object.freeze(['KeyM']);
 
 /**
  * Binds game input and returns a function that removes every listener.
@@ -11,9 +13,10 @@ export const PAUSE_KEYS = Object.freeze(['KeyP', 'Escape']);
  * - A flap key calls `onFlap` once per physical press. Auto-repeat and a key that is still
  *   held are ignored, so holding a key through a crash does not start a new flight.
  * - A pause key calls `onPause` once per physical press, with the same repeat and held-key rules.
- * - Flap and pause keys always cancel the default action: no page scroll and no click on a
+ * - A mute key calls `onMute` once per physical press, with the same rules, in every game state.
+ * - Flap, pause and mute keys always cancel the default action: no page scroll and no click on a
  *   focused button, so Space on a focused button never activates it.
- * - Ctrl, Alt or Meta with a flap or pause key is a browser shortcut and is left alone.
+ * - Ctrl, Alt or Meta with a flap, pause or mute key is a browser shortcut and is left alone.
  * - Window blur and a hidden tab forget held keys, because their keyup may never arrive.
  *   A hidden tab also calls `onHidden`; becoming visible again calls nothing.
  * - A primary pointer press anywhere on `stage` calls `onFlap`, except on a bound button.
@@ -29,16 +32,19 @@ export const PAUSE_KEYS = Object.freeze(['KeyP', 'Escape']);
  * @param {() => void} options.onFlap Called for a new flap key press or stage tap. The game
  *   decides what a flap means in its current state (main.js ignores it while paused).
  * @param {() => void} [options.onPause] Called for a new pause key press.
+ * @param {() => void} [options.onMute] Called for a new mute key press.
  * @param {() => void} [options.onHidden] Called when the document becomes hidden.
  * @returns {() => void} Removes the listeners.
  */
-export function bindInput({ win, doc, stage, buttons = [], onFlap, onPause = () => {}, onHidden = () => {} }) {
+export function bindInput({ win, doc, stage, buttons = [], onFlap, onPause = () => {}, onMute = () => {}, onHidden = () => {} }) {
   const held = new Set();
   const isBoundButton = (node) => buttons.some(([button]) => button === node);
   const isInsideButton = (node) => buttons.some(([button]) => button.contains(node));
   const hasShortcutModifier = (event) => event.ctrlKey || event.altKey || event.metaKey;
 
-  const actionFor = (code) => (FLAP_KEYS.includes(code) ? onFlap : PAUSE_KEYS.includes(code) ? onPause : null);
+  const actionFor = (code) => (FLAP_KEYS.includes(code) ? onFlap
+    : PAUSE_KEYS.includes(code) ? onPause
+      : MUTE_KEYS.includes(code) ? onMute : null);
 
   function onKeyDown(event) {
     const action = actionFor(event.code);

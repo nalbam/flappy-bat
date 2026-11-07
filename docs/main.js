@@ -1,9 +1,11 @@
 /* Flappy Bat — procedural Three.js game, no build step required. */
 import { bindInput } from './input.mjs';
+import { createSound } from './audio.mjs';
+import { advanceWithSounds, flapWithSound, startWithSound } from './audio-events.mjs';
 import { frameView } from './view.mjs';
 import { BAT_HALF_HEIGHT, BAT_HALF_WIDTH, BAT_START_Y, BAT_X, CAVE_FLOOR, bodyPitch } from './game-rules.mjs';
 import { createBatMotion, makeBat } from './bat-model.mjs';
-import { OBSTACLE_COUNT, createFrameClock, createGame, resumeRun, startRun, togglePause } from './game-core.mjs';
+import { OBSTACLE_COUNT, createFrameClock, createGame, resumeRun, togglePause } from './game-core.mjs';
 import { obstacleParts } from './collision.mjs';
 import { MAX_SEED, parseSeed, randomSeed } from './obstacle-generator.mjs';
 import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } from './rock-mesh.mjs';
@@ -17,6 +19,7 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   const stage = $('game'), sceneHost = $('scene'), scoreEl = $('score'), bestEl = $('best');
   const overlay = $('overlay'), message = $('message'), startButton = $('startButton');
   const restartButton = $('restartButton'), continueButton = $('continueButton'), touchHint = $('touchHint');
+  const soundCard = $('soundCard'), soundEl = $('sound');
   // Accessible name of the overlay in each phase: the visible heading of that screen.
   const SCREEN_TITLES = { ready:'title', paused:'pauseTitle', over:'overTitle' };
   const MAX_PARTICLES = 230;
@@ -102,29 +105,36 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, restY=CAVE_FLOOR, shownScore=0, scrolled=0;
   const crashPoint = new THREE.Vector3();
   bestEl.textContent=best;
+  // Sound is an effect only: it reads accepted actions and tick results and never changes the model (audio-events.mjs).
+  // The AudioContext starts on the first key, pointer or button input; muting is saved apart from the best score.
+  const sound=createSound(), SOUND_TEXT={ on:'켜짐', off:'꺼짐', unavailable:'없음' };
+  function showSound(){ soundEl.textContent=SOUND_TEXT[sound.status]; soundCard.dataset.state=sound.status; }
+  showSound();
+  const withUnlock=(action)=>()=>{ sound.unlock(); action(); showSound(); };
+  function toggleMute(){ sound.toggleMute(); showSound(); }
   function showScore(){ if(game.score===shownScore) return; shownScore=game.score; scoreEl.textContent=shownScore; }
   function syncObstacles(){ obstacles.forEach((o,i)=>{ const d=game.obstacles[i]; if(o.userData.shape!==shapeKey(d)) shapeObstacle(o,d); o.position.x=d.x; }); }
   // Centre height where the falling bat comes to rest after a crash: on the floor, or on a lower pillar right under it.
   function restHeight(){ let surface=CAVE_FLOOR; game.obstacles.forEach((o)=>obstacleParts(o).forEach((p)=>{ if(p.side==='lower'&&p.edgeY<game.bat.y&&p.edgeY>surface&&Math.abs(p.x-game.bat.x)<p.halfWidth+BAT_HALF_WIDTH) surface=p.edgeY; })); return surface+BAT_HALF_HEIGHT; }
   function clearEffects(){ shake=0; fallVelocity=0; bat.rotation.z=0; particles.forEach(p=>{p.life=0;p.mesh.visible=false;}); }
   function setReady(){ game.reset(); clearEffects(); batMotion.reset(); scrolled=0; showScore(); bat.position.set(BAT_X,BAT_START_Y,0);message.textContent='';showScreen('ready'); }
-  function start(){ if(!startRun(game,clock)) return; batMotion.flap(); showScreen('running'); }
+  function start(){ if(!startWithSound(game,clock,sound)) return; batMotion.flap(); showScreen('running'); }
   // Runs once when the model reports a crash. The bat is shown in the pose that touched (model position and tilt),
   // and the dust bursts from the touched point. Then come the best score and the over screen.
   function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; restY=Math.min(restHeight(),game.bat.y); bat.position.y=game.bat.y; bat.rotation.z=bodyPitch(game.bat.velocity); crashPoint.set(game.crash.x,game.crash.y,0); burst(crashPoint,38,0xd87554,3.2); burst(crashPoint,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
   function restart(){ setReady(); start(); }
   // Pause and resume only switch the model state; the run itself is kept. resumeRun() restarts the frame clock,
   // so the first frame after a resume is 0 s and no paused time is simulated.
-  function pause(){ if(game.pause()) showScreen('paused'); }
+  function pause(){ if(game.pause()){ sound.silence(); showScreen('paused'); } }
   function resume(){ if(resumeRun(game,clock)) showScreen('running'); }
-  function onPauseKey(){ if(togglePause(game,clock)) showScreen(game.state); }
+  function onPauseKey(){ if(!togglePause(game,clock)) return; if(game.state==='paused') sound.silence(); showScreen(game.state); }
   // `ready` shows the start guide, `paused` the resume guide and `over` a compact crash result. While running, the overlay
   // fades out as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
   function showScreen(phase){ const running=phase==='running'; if(!running){ overlay.dataset.phase=phase; overlay.setAttribute('aria-labelledby',SCREEN_TITLES[phase]); } overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
   // The seed lets a player report the run; `?seed=<seed>` replays its obstacles.
   function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span><span class="result-seed">SEED ${game.seed}</span>`; }
   // A flap while paused does nothing, also after the resume: only the pause keys and the `계속` button resume.
-  function flap(){ if(game.state==='paused') return; if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else { game.flap(); batMotion.flap(); } }
+  function flap(){ if(game.state==='paused') return; if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else if(flapWithSound(game,sound)) batMotion.flap(); }
   // While running the bat shows exactly the model pose that collision tests: centre height and bodyPitch tilt.
   // While paused it keeps that pose (render passes dt = 0). After a crash it falls as an effect and stops on the
   // floor or the lower pillar under it.
@@ -141,14 +151,15 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   // The model consumes frame time in fixed ticks; effects use the same clamped frame time.
   // The crash frame does not move the bat, so the first over frame shows the touching pose.
   // While paused the effects get 0 s, so the wings, glow, dust and shake stand still; the scene is still drawn.
-  function render(now){ const frameSeconds=clock.frame(now), dt=game.state==='paused'?0:frameSeconds;elapsed+=dt; const wasRunning=game.state==='running'; game.advance(dt); const crashed=wasRunning&&game.state==='over'; if(crashed) gameOver(); showScore(); updateBat(crashed?0:dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
+  function render(now){ const frameSeconds=clock.frame(now), dt=game.state==='paused'?0:frameSeconds;elapsed+=dt; const { crashed }=advanceWithSounds(game,dt,sound); if(crashed) gameOver(); showScore(); updateBat(crashed?0:dt);updateWorld(dt);updateParticles(dt); shake*=Math.pow(.004,dt); placeCamera(); renderer.render(scene,camera); requestAnimationFrame(render); }
   // Fixed side view of the play plane: no height follow and no tilt, so gaps keep their screen height and pillars stay vertical.
   // The crash shake is a brief jitter (~.13 s half-life) and is off for reduced-motion users.
   function placeCamera(){ const s=reducedMotion.matches?0:shake*SHAKE_GAIN; camera.position.set(bat.position.x+view.x+Math.sin(elapsed*53)*s, view.y+Math.sin(elapsed*41+1)*s, view.distance); }
   function onResize(){ const aspect=innerWidth/innerHeight; view=frameView(aspect,CAM_FOV); camera.aspect=aspect; camera.updateProjectionMatrix(); scene.fog.density=FOG_DENSITY*FOG_REFERENCE_DISTANCE/view.distance; renderer.setPixelRatio(Math.min(devicePixelRatio,1.7)); renderer.setSize(innerWidth,innerHeight); placeCamera(); }
-  // A hidden tab pauses a running flight; becoming visible again does not resume it.
-  bindInput({ win:window, doc:document, stage, onFlap:flap, onPause:onPauseKey, onHidden:pause, buttons:[[startButton,flap],[restartButton,restart],[continueButton,resume]] });
+  // A hidden tab pauses a running flight; becoming visible again does not resume it. Every user input may start the sound.
+  bindInput({ win:window, doc:document, stage, onFlap:withUnlock(flap), onPause:withUnlock(onPauseKey), onMute:toggleMute, onHidden:pause,
+    buttons:[[startButton,withUnlock(flap)],[restartButton,withUnlock(restart)],[continueButton,withUnlock(resume)]] });
   addEventListener('resize',onResize); onResize();
-  document.addEventListener('visibilitychange',()=>clock.reset()); // hidden time is not simulated in any state
+  document.addEventListener('visibilitychange',()=>{ clock.reset(); if(document.hidden) sound.silence(); }); // hidden time is not simulated and a hidden tab is silent in any state
   requestAnimationFrame(render);
 })();
