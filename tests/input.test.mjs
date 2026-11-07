@@ -324,3 +324,78 @@ test('unbind removes every listener', () => {
   doc.dispatchEvent(new Event('visibilitychange'));
   assert.deepEqual(calls, []);
 });
+
+test('KeyM: one onMute per physical press; repeats, held keys and shortcuts ignored; blur releases', () => {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const calls = [];
+  bindInput({ win, doc, stage: new FakeElement(), onFlap: () => calls.push('flap'), onPause: () => calls.push('pause'), onMute: () => calls.push('mute') });
+  assert.equal(keydown(win, 'KeyM').defaultPrevented, true);
+  for (let i = 0; i < 4; i++) keydown(win, 'KeyM', { repeat: true });
+  keydown(win, 'KeyM');
+  assert.deepEqual(calls, ['mute'], 'auto-repeat and a held key toggle once');
+  keyup(win, 'KeyM');
+  keydown(win, 'KeyM');
+  assert.deepEqual(calls, ['mute', 'mute'], 'a new press toggles again');
+  win.dispatchEvent(new Event('blur'));
+  keydown(win, 'KeyM');
+  assert.deepEqual(calls, ['mute', 'mute', 'mute'], 'blur forgets the held key');
+  doc.hidden = true; doc.dispatchEvent(new Event('visibilitychange')); doc.hidden = false;
+  keydown(win, 'KeyM');
+  assert.equal(calls.length, 4, 'a hidden tab forgets the held key');
+  for (const modifier of ['ctrlKey', 'altKey', 'metaKey']) {
+    keyup(win, 'KeyM');
+    assert.equal(keydown(win, 'KeyM', { [modifier]: true }).defaultPrevented, false, modifier);
+  }
+  assert.equal(calls.length, 4, 'browser shortcuts never toggle');
+  keydown(win, 'Space'); keydown(win, 'KeyP');
+  assert.deepEqual(calls.slice(4), ['flap', 'pause'], 'mute keeps the flap and pause keys');
+});
+
+test('unbind also removes the mute key', () => {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const calls = [];
+  const unbind = bindInput({ win, doc, stage: new FakeElement(), onFlap: () => {}, onMute: () => calls.push('mute') });
+  unbind();
+  assert.equal(keydown(win, 'KeyM').defaultPrevented, false);
+  assert.deepEqual(calls, []);
+});
+
+test('callers without onMute keep working: KeyM is a no-op', () => {
+  const { win, calls } = setup();
+  assert.doesNotThrow(() => keydown(win, 'KeyM'));
+  assert.deepEqual(calls, []);
+});
+
+test('real game: KeyM toggles once per press in ready, running, paused and over without touching the model', () => {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const game = createGame({ seed: 12345 });
+  const clock = createFrameClock();
+  let muted = false;
+  const toggles = [];
+  bindInput({
+    win, doc, stage: new FakeElement(),
+    onFlap: () => (game.state === 'ready' ? startRun(game, clock) : game.flap()),
+    onPause: () => togglePause(game, clock),
+    onMute: () => { muted = !muted; toggles.push([game.state, muted]); },
+  });
+  const model = () => JSON.stringify({ state: game.state, tick: game.tick, bat: game.bat, score: game.score, obstacles: game.obstacles });
+  const pressM = () => {
+    const before = model();
+    keydown(win, 'KeyM'); keydown(win, 'KeyM', { repeat: true }); keyup(win, 'KeyM');
+    assert.equal(model(), before, `M changes nothing in ${game.state}`);
+  };
+  pressM();
+  keydown(win, 'Space'); keyup(win, 'Space');
+  game.advance(1 / 60);
+  pressM();
+  keydown(win, 'KeyP'); keyup(win, 'KeyP');
+  pressM();
+  keydown(win, 'KeyP'); keyup(win, 'KeyP');
+  game.bat.y = CAVE_FLOOR - 1;
+  game.advance(1 / 60);
+  pressM();
+  assert.deepEqual(toggles, [['ready', true], ['running', false], ['paused', true], ['over', false]]);
+});
