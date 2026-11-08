@@ -4,13 +4,13 @@ import v8 from 'node:v8';
 import vm from 'node:vm';
 
 import {
-  BASE_SPEED, BAT_HALF_HEIGHT, BAT_PITCH_RANGE, CAVE_CEILING, CAVE_FLOOR, FLAP_VELOCITY, GRAVITY, MAX_SPEED_BONUS,
+  BASE_SPEED, BAT_HALF_HEIGHT, BAT_PITCH_RANGE, BAT_START_Y, CAVE_CEILING, CAVE_FLOOR, FLAP_VELOCITY, GRAVITY, MAX_SPEED_BONUS,
   TICK, TICK_RATE, bodyPitch, speedAt,
 } from '../docs/game-rules.mjs';
 import { bodyExtents, obstacleParts, sweepBody } from '../docs/collision.mjs';
 import { OBSTACLE_COUNT, createGame } from '../docs/game-core.mjs';
 import {
-  DIFFICULTY_RAMP, FIRST_OBSTACLE_X, GAP_EDGE_RANGE, GAP_HEIGHT_RANGE, MIN_PILLAR_LENGTH, REACTION_SECONDS, READY_SECONDS,
+  DIFFICULTY_RAMP, FIRST_OBSTACLE_X, GAP_EDGE_RANGE, GAP_HEIGHT_RANGE, INTRO_GAP_BONUS, INTRO_PILLARS, MIN_PILLAR_LENGTH, REACTION_SECONDS, READY_SECONDS,
   SAFE_MARGIN, SPACING_RANGE, TARGET_SHIFT, createObstacleGenerator, createRandom, difficulty, isSeed, parseSeed,
 } from '../docs/obstacle-generator.mjs';
 import { PLAY_VIEW } from '../docs/view.mjs';
@@ -29,6 +29,19 @@ const REPLAY_SEEDS = [
     return seed;
   }),
 ];
+
+// Fixed copy of the difficulty ramp before the start section: the plain linear blend of the
+// documented ranges. Tests compare the generator against it; it must not follow the source.
+function legacyDifficulty(index) {
+  const p = Math.min(1, Math.max(0, index / DIFFICULTY_RAMP));
+  const blend = (easy, hard) => easy + (hard - easy) * p;
+  return {
+    progress: p,
+    gapHeight: [blend(3.9, 3.3), blend(4.3, 3.7)],
+    spacing: [blend(16, 12.5), blend(19, 15.5)],
+    shift: blend(1.2, 2.4),
+  };
+}
 
 const take = (seed, count, options) => {
   const generator = createObstacleGenerator(seed, options);
@@ -167,13 +180,95 @@ test('the planned path turns toward a pillar only a reaction time after it comes
 
 test('difficulty ramps from the easy to the hard ranges and then holds', () => {
   const easy = difficulty(0), hard = difficulty(DIFFICULTY_RAMP);
-  assert.deepEqual([easy.gapHeight, easy.spacing, easy.shift, easy.progress], [GAP_HEIGHT_RANGE.easy, SPACING_RANGE.easy, TARGET_SHIFT.easy, 0]);
+  // Pillar 0 is the gentlest pillar of the start section: the easy ranges, a wider gap and no target shift.
+  assert.deepEqual([easy.gapHeight, easy.spacing, easy.shift, easy.progress], [GAP_HEIGHT_RANGE.easy.map((v) => v + INTRO_GAP_BONUS), SPACING_RANGE.easy, 0, 0]);
+  assert.deepEqual(difficulty(0).gapHeight, [4.7, 5.1]);
+  assert.equal(legacyDifficulty(0).shift, TARGET_SHIFT.easy);
   assert.deepEqual([hard.gapHeight, hard.spacing, hard.shift, hard.progress], [GAP_HEIGHT_RANGE.hard, SPACING_RANGE.hard, TARGET_SHIFT.hard, 1]);
   assert.deepEqual(difficulty(100000), hard);
   for (let i = 1; i <= DIFFICULTY_RAMP; i++) {
     const [a, b] = [difficulty(i - 1), difficulty(i)];
     assert.ok(b.gapHeight[0] < a.gapHeight[0] && b.spacing[0] < a.spacing[0] && b.shift > a.shift, `index ${i} is harder`);
   }
+});
+
+test('the start section widens the first 3 gaps and keeps the start hover height at pillar 0', () => {
+  assert.equal(INTRO_PILLARS, 3);
+  assert.equal(INTRO_GAP_BONUS, 0.8);
+  for (let i = 0; i < INTRO_PILLARS; i++) {
+    const now = difficulty(i), before = legacyDifficulty(i);
+    assert.deepEqual(now.gapHeight, before.gapHeight.map((v) => v + INTRO_GAP_BONUS * (1 - i / INTRO_PILLARS)), `index ${i} gap height`);
+    assert.equal(now.shift, before.shift * (i / INTRO_PILLARS), `index ${i} shift`);
+    assert.deepEqual([now.spacing, now.progress], [before.spacing, before.progress], `index ${i} spacing and progress`);
+  }
+
+  // The same seeds before (legacy ramp) and after: wider gaps and more room around the planned path.
+  const SEEDS = 200;
+  const sum = { before: [0, 0, 0], after: [0, 0, 0], roomBefore: [0, 0, 0], roomAfter: [0, 0, 0] };
+  for (let seed = 1; seed <= SEEDS; seed++) {
+    const before = take(seed, INTRO_PILLARS, { difficultyAt: legacyDifficulty });
+    const after = take(seed, INTRO_PILLARS);
+    for (let i = 0; i < INTRO_PILLARS; i++) {
+      const bonus = INTRO_GAP_BONUS * (1 - i / INTRO_PILLARS);
+      // Same random draws, so the gap height is the legacy one plus the bonus (up to float rounding of the blend).
+      assert.ok(Math.abs(after[i].gapHeight - (before[i].gapHeight + bonus)) < 1e-12, `seed ${seed} obstacle ${i}: gap height ${after[i].gapHeight}`);
+      sum.before[i] += before[i].gapHeight;
+      sum.after[i] += after[i].gapHeight;
+      sum.roomBefore[i] += before[i].gapHeight - (before[i].path.high - before[i].path.low);
+      sum.roomAfter[i] += after[i].gapHeight - (after[i].path.high - after[i].path.low);
+    }
+    // Pillar 0 keeps the start target: the planned path hovers at BAT_START_Y through the first pillar,
+    // so its body stays within one hover of the start height.
+    const first = after[0];
+    const flat = take(seed, 1, { difficultyAt: (i) => ({ ...legacyDifficulty(i), gapHeight: difficulty(i).gapHeight, shift: 0 }) })[0];
+    assert.deepEqual(first.path, flat.path, `seed ${seed}: pillar 0 plans no target change`);
+    // The shift draw no longer moves it: every seed plans the same hover from BAT_START_Y.
+    if (seed === 1) sum.firstPath = first.path;
+    else assert.deepEqual(first.path, sum.firstPath, `seed ${seed}: pillar 0 path is the start hover`);
+    assert.ok(first.path.low > BAT_START_Y - BAT_HALF_HEIGHT && first.path.low - BAT_START_Y < BAT_HALF_HEIGHT, `seed ${seed}: pillar 0 path hovers at the start height`);
+    // The gap centre is closer to the start height on average than before (checked below).
+    sum.offsetBefore = (sum.offsetBefore ?? 0) + Math.abs(before[0].gapY - BAT_START_Y);
+    sum.offsetAfter = (sum.offsetAfter ?? 0) + Math.abs(first.gapY - BAT_START_Y);
+  }
+  assert.ok(sum.offsetAfter < sum.offsetBefore, `pillar 0 gap centre to start height: ${sum.offsetAfter / SEEDS} < ${sum.offsetBefore / SEEDS}`);
+  for (let i = 0; i < INTRO_PILLARS; i++) {
+    assert.ok(sum.after[i] > sum.before[i], `obstacle ${i}: mean gap height ${sum.after[i] / SEEDS} > ${sum.before[i] / SEEDS}`);
+    assert.ok(sum.roomAfter[i] > sum.roomBefore[i], `obstacle ${i}: mean room ${sum.roomAfter[i] / SEEDS} > ${sum.roomBefore[i] / SEEDS}`);
+  }
+});
+
+test('after the start section the ramp, the pillar x, the spacing and so the arrival speed stay as before', () => {
+  for (let i = INTRO_PILLARS; i <= 3000; i++) assert.deepEqual(difficulty(i), legacyDifficulty(i), `index ${i}`);
+  for (let i = 0; i <= 3000; i++) {
+    const [now, before] = [difficulty(i), legacyDifficulty(i)];
+    assert.deepEqual([now.spacing, now.progress], [before.spacing, before.progress], `index ${i}`);
+  }
+  // Every pillar draws the same four numbers, so the same seed puts every pillar at the same x.
+  // The scroll speed depends only on run time, so each pillar is also reached at the same time and speed.
+  for (const seed of [1, 2, 3, 20261031, 12345]) {
+    const now = take(seed, 400), before = take(seed, 400, { difficultyAt: legacyDifficulty });
+    now.forEach((d, i) => assert.deepEqual([d.x, d.spacing], [before[i].x, before[i].spacing], `seed ${seed} obstacle ${i}`));
+  }
+});
+
+test('the first run and a restart with the same seed fly the same obstacles', () => {
+  const SEED = 20261031;
+  const game = createGame({ seed: SEED });
+  const snapshot = () => game.obstacles.map((o) => ({ ...o, passed: undefined })).sort((a, b) => a.index - b.index);
+  const first = snapshot();
+  replay(game, 4); // through the start section
+  const firstRun = [...game.obstacles].map((o) => [o.index, o.x + game.distance, o.gapY, o.gapHeight]).sort((a, b) => a[0] - b[0]);
+  game.bat.y = CAVE_FLOOR - 1; // crash, then restart
+  game.step();
+  assert.equal(game.state, 'over');
+  game.reset();
+  assert.equal(game.seed, SEED);
+  assert.deepEqual(snapshot(), first, 'the restart sets up the same first obstacles');
+  replay(game, 4);
+  const restart = [...game.obstacles].map((o) => [o.index, o.x + game.distance, o.gapY, o.gapHeight]).sort((a, b) => a[0] - b[0]);
+  assert.deepEqual(restart, firstRun, 'the restart flies the same obstacles');
+  const generated = take(SEED, OBSTACLE_COUNT);
+  first.forEach((o, i) => assert.deepEqual([o.index, o.gapY, o.gapHeight], [i, generated[i].gapY, generated[i].gapHeight]));
 });
 
 test('long runs keep gap height, gap position and spacing inside the documented ranges', () => {

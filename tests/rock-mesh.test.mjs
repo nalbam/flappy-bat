@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CAVE_CEILING, CAVE_FLOOR } from '../docs/game-rules.mjs';
 import { obstacleParts } from '../docs/collision.mjs';
-import { GAP_EDGE_RANGE, GAP_HEIGHT_RANGE, OBSTACLE_HALF_WIDTH } from '../docs/obstacle-generator.mjs';
+import { GAP_EDGE_RANGE, GAP_HEIGHT_RANGE, INTRO_GAP_BONUS, OBSTACLE_HALF_WIDTH } from '../docs/obstacle-generator.mjs';
 import {
   CAVE_LIP_DEPTH, PILLAR_DEPTH, STONE_MARGIN, TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh,
 } from '../docs/rock-mesh.mjs';
@@ -41,10 +41,12 @@ function signedDistance([x, y], polygon) {
   return inside > 0 ? outside : inside;
 }
 
-// The narrowest and widest generated gaps at the lowest, middle and highest generated positions,
-// plus edges that sit just above the floor or below the ceiling.
+// The narrowest gap, the widest gap of the plain ramp and the widest gap of the start section
+// (pillar 0, 5.1) at the lowest, middle and highest generated positions, plus edges that sit just
+// above the floor or below the ceiling.
 const [EDGE_LOW, EDGE_HIGH] = GAP_EDGE_RANGE;
-const GAPS = [GAP_HEIGHT_RANGE.hard[0], GAP_HEIGHT_RANGE.easy[1]].flatMap((gapHeight) => [
+const WIDEST_GAP = GAP_HEIGHT_RANGE.easy[1] + INTRO_GAP_BONUS;
+const GAPS = [GAP_HEIGHT_RANGE.hard[0], GAP_HEIGHT_RANGE.easy[1], WIDEST_GAP].flatMap((gapHeight) => [
   EDGE_LOW + gapHeight / 2, (EDGE_LOW + EDGE_HIGH) / 2, EDGE_HIGH - gapHeight / 2,
   CAVE_FLOOR + gapHeight / 2 + 0.05, CAVE_CEILING - gapHeight / 2 - 0.05,
 ].map((gapY) => ({ gapY, gapHeight })));
@@ -52,6 +54,7 @@ const PARTS = GAPS.flatMap((gap) => obstacleParts({ x: 0, ...gap, halfWidth: OBS
 
 test('the pillar mesh meets the play plane exactly on its collision outline', () => {
   assert.ok(PARTS.length >= GAPS.length, 'most gaps have both parts');
+  assert.ok(Math.abs(WIDEST_GAP - 5.1) < 1e-12 && GAPS.some((gap) => gap.gapHeight === WIDEST_GAP), 'the start section gap is covered');
   PARTS.forEach((part, n) => {
     const mesh = pillarMesh(part, seeded(n + 1));
     const label = `${part.side} part, edge ${part.edgeY.toFixed(3)}`;
