@@ -20,6 +20,14 @@ export const GAP_HEIGHT_RANGE = Object.freeze({ easy: [3.9, 4.3], hard: [3.3, 3.
 export const SPACING_RANGE = Object.freeze({ easy: [16, 19], hard: [12.5, 15.5] }); // x from the previous pillar
 export const TARGET_SHIFT = Object.freeze({ easy: 1.2, hard: 2.4 }); // largest change of the planned hover height
 
+// Start section: the first INTRO_PILLARS pillars of every run (first run and restarts alike)
+// are gentler. Pillar i < INTRO_PILLARS gets INTRO_GAP_BONUS * (1 - i / INTRO_PILLARS) more gap
+// height and i / INTRO_PILLARS of the usual target shift, so pillar 0 keeps the start hover
+// height. From INTRO_PILLARS on the ranges are the plain ramp. Spacing, speed and physics do not
+// change, so every pillar keeps its x and arrival speed and later scores compare across versions.
+export const INTRO_PILLARS = 3;
+export const INTRO_GAP_BONUS = 0.8;
+
 // Clearance between the planned path and every gap edge, the floor and the ceiling. At the
 // 5.1 units/s a hovering bat falls with when it flaps, it allows a flap about 90 ms early or late.
 export const SAFE_MARGIN = 0.45;
@@ -65,16 +73,26 @@ const lerp = ([a, b], t) => a + (b - a) * t;
 const between = (easy, hard, p) => easy + (hard - easy) * p;
 
 /**
- * Ranges for the obstacle with this index (0 is the first pillar of a run).
+ * Ranges for the obstacle with this index (0 is the first pillar of a run), with the start
+ * section (INTRO_PILLARS) applied.
  * @returns {{progress: number, gapHeight: [number, number], spacing: [number, number], shift: number}}
  */
 export function difficulty(index) {
   const p = Math.min(1, Math.max(0, index / DIFFICULTY_RAMP));
-  return {
+  const ramp = {
     progress: p,
     gapHeight: GAP_HEIGHT_RANGE.easy.map((v, i) => between(v, GAP_HEIGHT_RANGE.hard[i], p)),
     spacing: SPACING_RANGE.easy.map((v, i) => between(v, SPACING_RANGE.hard[i], p)),
     shift: between(TARGET_SHIFT.easy, TARGET_SHIFT.hard, p),
+  };
+  if (!(index < INTRO_PILLARS)) return ramp;
+  // Start section: the bonus falls from INTRO_GAP_BONUS at pillar 0 to 0 at INTRO_PILLARS, and
+  // the target shift grows from 0 to the ramp value.
+  const share = Math.max(0, index) / INTRO_PILLARS;
+  return {
+    ...ramp,
+    gapHeight: ramp.gapHeight.map((v) => v + INTRO_GAP_BONUS * (1 - share)),
+    shift: ramp.shift * share,
   };
 }
 
