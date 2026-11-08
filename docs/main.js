@@ -8,6 +8,7 @@ import { createBatMotion, makeBat } from './bat-model.mjs';
 import { OBSTACLE_COUNT, createFrameClock, createGame, resumeRun, togglePause } from './game-core.mjs';
 import { obstacleParts } from './collision.mjs';
 import { MAX_SEED, parseSeed, randomSeed } from './obstacle-generator.mjs';
+import { addFlight, loadHistory, saveHistory, seedHref } from './flight-history.mjs';
 import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } from './rock-mesh.mjs';
 
 (() => {
@@ -19,7 +20,7 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   const stage = $('game'), sceneHost = $('scene'), scoreEl = $('score'), bestEl = $('best');
   const overlay = $('overlay'), message = $('message'), startButton = $('startButton');
   const restartButton = $('restartButton'), continueButton = $('continueButton'), touchHint = $('touchHint');
-  const soundCard = $('soundCard'), soundEl = $('sound');
+  const soundCard = $('soundCard'), soundEl = $('sound'), recentList = $('recentList');
   // Accessible name of the overlay in each phase: the visible heading of that screen.
   const SCREEN_TITLES = { ready:'title', paused:'pauseTitle', over:'overTitle' };
   const MAX_PARTICLES = 230;
@@ -105,6 +106,10 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   let best=readBestScore(), elapsed=0, shake=0, fallVelocity=0, restY=CAVE_FLOOR, shownScore=0, scrolled=0;
   const crashPoint = new THREE.Vector3();
   bestEl.textContent=best;
+  // Recent flights (flight-history.mjs): read once here, then kept in memory. Every crash adds { score, seed } and
+  // saves the last five under their own key; a blocked storage or a broken value only gives an empty history.
+  const getStorage=()=>window.localStorage; // may throw where storage is blocked; flight-history.mjs catches it
+  let recentFlights=loadHistory(getStorage);
   // Sound is an effect only: it reads accepted actions and tick results and never changes the model (audio-events.mjs).
   // The AudioContext starts on the first key, pointer or button input; muting is saved apart from the best score.
   const sound=createSound(), SOUND_TEXT={ on:'켜짐', off:'꺼짐', unavailable:'없음' };
@@ -120,8 +125,8 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   function setReady(){ game.reset(); clearEffects(); batMotion.reset(); scrolled=0; showScore(); bat.position.set(BAT_X,BAT_START_Y,0);message.textContent='';showScreen('ready'); }
   function start(){ if(!startWithSound(game,clock,sound)) return; batMotion.flap(); showScreen('running'); }
   // Runs once when the model reports a crash. The bat is shown in the pose that touched (model position and tilt),
-  // and the dust bursts from the touched point. Then come the best score and the over screen.
-  function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; restY=Math.min(restHeight(),game.bat.y); bat.position.y=game.bat.y; bat.rotation.z=bodyPitch(game.bat.velocity); crashPoint.set(game.crash.x,game.crash.y,0); burst(crashPoint,38,0xd87554,3.2); burst(crashPoint,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} showScreen('over'); showResult(record); }
+  // and the dust bursts from the touched point. Then come the best score, the recent flights and the over screen.
+  function gameOver(){ shake=.62; fallVelocity=game.bat.velocity; restY=Math.min(restHeight(),game.bat.y); bat.position.y=game.bat.y; bat.rotation.z=bodyPitch(game.bat.velocity); crashPoint.set(game.crash.x,game.crash.y,0); burst(crashPoint,38,0xd87554,3.2); burst(crashPoint,26,0x8c6570,2.2); const record=game.score>best; if(record){best=game.score;writeBestScore(best);bestEl.textContent=best;} recentFlights=addFlight(recentFlights,{ score:game.score, seed:game.seed }); saveHistory(getStorage,recentFlights); showScreen('over'); showResult(record); }
   function restart(){ setReady(); start(); }
   // Pause and resume only switch the model state; the run itself is kept. resumeRun() restarts the frame clock,
   // so the first frame after a resume is 0 s and no paused time is simulated.
@@ -132,7 +137,12 @@ import { TUNNEL_SEGMENT_LENGTH, pillarMesh, tunnelSections, tunnelSegmentMesh } 
   // fades out as an inert, pointer-transparent layer, so taps reach the stage and hidden buttons keep no focus.
   function showScreen(phase){ const running=phase==='running'; if(!running){ overlay.dataset.phase=phase; overlay.setAttribute('aria-labelledby',SCREEN_TITLES[phase]); } overlay.classList.toggle('hidden',running); overlay.inert=running; touchHint.classList.toggle('off',phase!=='ready'); if(running&&overlay.contains(document.activeElement)) document.activeElement.blur(); }
   // The seed lets a player report the run; `?seed=<seed>` replays its obstacles.
-  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span><span class="result-seed">SEED ${game.seed}</span>`; }
+  function showResult(record){ message.innerHTML=`<span class="result-label">통과한 기둥</span><strong class="result-score">${game.score}</strong><span class="result-best${record?' record':''}">${record?'새 최고 기록!':`최고 기록 ${best}`}</span><span class="result-seed">SEED ${game.seed}</span>`; showHistory(); }
+  // Recent flights, newest first. Each seed links to `?seed=<seed>` on the same page with the other query parameters kept.
+  // The list is built with DOM text and attributes; recentFlights holds only validated integers (parseHistory, addFlight).
+  function showHistory(){ recentList.replaceChildren(...recentFlights.map(({ score, seed })=>{ const item=document.createElement('li'), points=document.createElement('span'), link=document.createElement('a');
+    points.className='recent-score'; points.textContent=`${score}점`; link.className='recent-seed'; link.href=seedHref(location.search,seed); link.textContent=`SEED ${seed}`; link.setAttribute('aria-label',`${score}점 비행의 SEED ${seed} 다시 하기`);
+    item.append(points,link); return item; })); }
   // A flap while paused does nothing, also after the resume: only the pause keys and the `계속` button resume.
   function flap(){ if(game.state==='paused') return; if(game.state==='ready') start(); else if(game.state==='over'){setReady();start();} else if(flapWithSound(game,sound)) batMotion.flap(); }
   // While running the bat shows exactly the model pose that collision tests: centre height and bodyPitch tilt.

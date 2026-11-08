@@ -4,7 +4,7 @@ Three.js와 순수 JavaScript로 만든, 빌드 과정이 필요 없는 GitHub P
 
 ## 실행
 
-`docs/main.js`는 `docs/input.mjs`, `docs/audio.mjs`, `docs/audio-events.mjs`, `docs/view.mjs`, `docs/game-rules.mjs`, `docs/game-core.mjs`, `docs/collision.mjs`, `docs/obstacle-generator.mjs`, `docs/rock-mesh.mjs`, `docs/bat-model.mjs`를 불러오는 native ES module(`<script type="module">`)입니다. 브라우저는 `file://`로 연 페이지에서 module을 불러오지 않으므로 `docs/index.html`을 직접 열면 게임이 시작되지 않습니다. 반드시 HTTP 서버로 엽니다.
+`docs/main.js`는 `docs/input.mjs`, `docs/audio.mjs`, `docs/audio-events.mjs`, `docs/view.mjs`, `docs/game-rules.mjs`, `docs/game-core.mjs`, `docs/collision.mjs`, `docs/obstacle-generator.mjs`, `docs/flight-history.mjs`, `docs/rock-mesh.mjs`, `docs/bat-model.mjs`를 불러오는 native ES module(`<script type="module">`)입니다. 브라우저는 `file://`로 연 페이지에서 module을 불러오지 않으므로 `docs/index.html`을 직접 열면 게임이 시작되지 않습니다. 반드시 HTTP 서버로 엽니다.
 
 1. 저장소 루트에서 정적 서버를 실행합니다.
 
@@ -21,15 +21,24 @@ Three.js와 순수 JavaScript로 만든, 빌드 과정이 필요 없는 GitHub P
 - 박쥐는 화면 왼쪽에서 오른쪽으로 날아가는 횡스크롤로 진행하며, 동굴과 기둥이 오른쪽에서 왼쪽으로 흘러옵니다. 카메라는 비행 평면을 옆에서 기울이지 않고 고정해서 비추므로, 기둥 틈의 높이가 비행 중에 바뀌어 보이지 않습니다.
 - 날갯짓: `Space` / `ArrowUp` / 클릭 / 탭. 키를 한 번 누를 때마다 한 번만 날갯짓하며, 누르고 있어도 반복되지 않습니다.
 - 시작: 시작 화면에서 날갯짓 입력을 하거나 `날아오르기` 버튼을 누릅니다. 버튼에 포커스한 상태에서는 `Enter`도 동작합니다. 시작 입력도 일반 날갯짓과 같은 상승 속도를 한 번 줍니다.
-- 빠른 재시작: 충돌하면 결과 카드에 통과한 기둥 수와 최고 기록이 표시됩니다. 새로 `Space`·`ArrowUp`을 누르거나, 화면을 클릭·탭하거나, `다시 시작` 버튼을 누르면 한 번에 새 비행을 시작합니다. 충돌할 때 누르고 있던 키로는 재시작하지 않으므로 키를 뗐다가 다시 누릅니다.
+- 빠른 재시작: 충돌하면 결과 카드에 통과한 기둥 수, 최고 기록, 그 비행의 `SEED`, 최근 비행 목록이 표시됩니다. 새로 `Space`·`ArrowUp`을 누르거나, 화면을 클릭·탭하거나, `다시 시작` 버튼을 누르면 한 번에 새 비행을 시작합니다. 충돌할 때 누르고 있던 키로는 재시작하지 않으므로 키를 뗐다가 다시 누릅니다.
 - 일시정지: 비행 중에 `P` 또는 `Escape`를 누릅니다. 일시정지 화면에 `일시정지`와 재개 방법이 표시됩니다. 다시 `P`·`Escape`를 누르거나 `계속` 버튼을 클릭·탭하면 멈춘 자리에서 이어서 납니다. 버튼에 포커스한 상태에서는 `Enter`도 동작합니다. 재개는 날갯짓을 하지 않으므로 박쥐는 멈출 때의 속도로 이어서 납니다.
 - 일시정지 중에는 `Space`·`ArrowUp`·클릭·탭이 아무 동작도 하지 않습니다. 날갯짓하지 않고, 재개하지 않으며, 재개한 뒤에 늦게 실행되지도 않습니다. `계속` 버튼에 포커스가 있어도 `Space`로는 재개하지 않습니다. 일시정지 키를 누르고 있어도 한 번만 동작합니다.
 - 비행 중에 탭을 숨기면 자동으로 일시정지합니다. 탭이 다시 보여도 자동으로 재개하지 않습니다. 시작 화면과 결과 화면에서는 일시정지 키와 탭 숨김이 상태를 바꾸지 않습니다.
-- 현재 점수는 비행마다 초기화되며, 최고 점수만 브라우저 `localStorage`에 저장됩니다.
+- 현재 점수는 비행마다 초기화됩니다. 브라우저 `localStorage`에는 다음 세 키를 따로 저장합니다.
+
+  | 키 | 값 |
+  |---|---|
+  | `flappyBatBest` | 최고 점수 |
+  | `flappyBatMuted` | 음소거 설정(`1`·`0`) |
+  | `flappyBatRecent` | 최근 비행 5개의 점수와 seed. JSON 배열 `[{"score":점수,"seed":번호}]`이며 최신 비행이 앞입니다. |
+
+- 최근 비행: 비행이 끝날 때(충돌)마다 점수와 seed를 최근 기록 맨 앞에 추가하고, 최근 5개만 `flappyBatRecent`에 저장합니다. 6번째 비행부터는 가장 오래된 기록이 빠집니다. 결과 카드의 `최근 비행` 목록은 최신순으로 점수와 `SEED <번호>`를 보여 줍니다. 기록은 새로고침 뒤에도 유지됩니다.
+- 저장소를 쓸 수 없거나(차단·용량 초과) 저장된 최근 기록이 깨졌으면 빈 기록으로 시작합니다. 게임은 그대로 동작하고, 그 페이지 안에서는 메모리의 기록이 계속 쌓입니다. 저장값의 항목 중 점수가 0 이상 정수가 아니거나 seed가 0~4294967295 정수가 아닌 항목은 버리고, 나머지 올바른 항목만 씁니다.
 - 소리: 받아들여진 날갯짓(시작·재시작 포함), 점수 1점, 충돌마다 효과음이 한 번 납니다. 효과음은 Web Audio로 실행 중에 만들며 오디오 파일을 쓰지 않습니다. 첫 키·클릭·탭 입력 전에는 오디오를 시작하지 않습니다. 브라우저가 오디오를 재개하는 동안 받은 효과음은 재개가 끝나면 걸린 시간과 관계없이 한 번 재생합니다. 재개가 실패하거나 재개 전에 일시정지·탭 숨김·음소거가 일어나면 그 효과음은 버립니다. 일시정지·탭 숨김·음소거는 나고 있는 소리와 예약된 소리를 바로 멈추고, 재개나 음소거 해제 때 지난 소리를 재생하지 않습니다.
 - 음소거: 모든 상태(`ready`·`running`·`paused`·`over`)에서 `M`을 누를 때마다 소리를 켜고 끕니다. HUD의 `소리` 카드가 `켜짐`·`꺼짐`·`없음`을 글자로 표시합니다. 설정은 최고 점수와 다른 `localStorage` 키(`flappyBatMuted`)에 저장되어 새로고침 후에도 유지됩니다. 저장소를 쓸 수 없으면 그 페이지 안에서만 유지됩니다.
 - Web Audio를 지원하지 않거나 오디오를 시작할 수 없는 브라우저에서는 소리 없이 게임이 그대로 동작하고 HUD에 `없음`이 표시됩니다. 소리는 게임 모델과 고정 tick 결과를 바꾸지 않습니다.
-- 결과 카드의 `SEED` 번호는 그 비행의 장애물 배치 번호입니다. `?seed=<번호>`로 같은 배치를 다시 플레이할 수 있습니다([장애물 생성과 seed](#장애물-생성과-seed)).
+- 결과 카드의 `SEED` 번호는 그 비행의 장애물 배치 번호입니다. `?seed=<번호>`로 같은 배치를 다시 플레이할 수 있습니다([장애물 생성과 seed](#장애물-생성과-seed)). `최근 비행` 목록의 각 `SEED <번호>`는 같은 페이지를 `?seed=<번호>`로 다시 여는 링크입니다. 다른 query 값은 유지합니다. 링크를 클릭·탭하면 새 비행을 시작하지 않고 페이지만 이동하며, 이동한 페이지는 시작 화면에서 그 seed로 비행합니다. 링크에 포커스한 상태에서 `Enter`는 링크를 열고, `Space`는 링크를 열지 않고 기존처럼 다시 시작합니다.
 - 운영체제에서 동작 줄이기(`prefers-reduced-motion`)를 켜면 충돌 시 화면 흔들림을 끕니다.
 
 ## 게임 규칙과 시간 처리
@@ -42,7 +51,8 @@ Three.js와 순수 JavaScript로 만든, 빌드 과정이 필요 없는 GitHub P
 | `docs/obstacle-generator.mjs` | seed 난수원, 난이도 범위, 안전한 날갯짓 경로를 먼저 계획하고 그 주변에 틈을 놓는 장애물 생성기 |
 | `docs/rock-mesh.mjs` | 충돌 윤곽에서 만드는 기둥·동굴 메시의 꼭짓점 데이터 |
 | `docs/bat-model.mjs` | 박쥐 메시(`makeBat`, 페이지의 Three.js를 인자로 받음)와 경과 시간으로 계산하는 날갯짓 포즈(`createBatMotion`, `wingPose`) |
-| `docs/input.mjs` | 키보드·포인터·버튼 이벤트를 날갯짓(`onFlap`)·일시정지 키(`onPause`)·음소거 키(`onMute`, `M`)·탭 숨김(`onHidden`)·버튼 동작으로 연결 |
+| `docs/flight-history.mjs` | 최근 비행 기록(`flappyBatRecent`, 최근 5개)의 추가(`addFlight`)·저장값 복구(`parseHistory`)·주입된 저장소 읽기·쓰기(`loadHistory`, `saveHistory`)와 seed 링크(`seedHref`) |
+| `docs/input.mjs` | 키보드·포인터·버튼 이벤트를 날갯짓(`onFlap`)·일시정지 키(`onPause`)·음소거 키(`onMute`, `M`)·탭 숨김(`onHidden`)·버튼 동작으로 연결. 링크 위의 포인터 입력은 날갯짓으로 보내지 않음 |
 | `docs/audio.mjs` | Web Audio 절차적 효과음(날갯짓·득점·충돌), 사용자 입력에서의 지연 생성·재개(`unlock`), 소리 차단(`silence`), 저장되는 음소거 설정(`createSound`) |
 | `docs/audio-events.mjs` | 받아들여진 시작·날갯짓과 프레임의 점수 증가량·충돌 전이를 효과음 호출로 바꾸는 연결(`startWithSound`, `flapWithSound`, `advanceWithSounds`) |
 | `docs/main.js` | 모델 결과를 Three.js 장면과 HUD에 반영하고 효과를 실행하는 어댑터 |
@@ -186,9 +196,10 @@ node --test
 ```
 
 - `tests/game-core.test.mjs`: 30·60·144Hz와 지연 프레임에서 같은 tick 입력의 결과가 같은지, catch-up 한도, 탭 숨김 시 일시정지와 다시 보일 때 자동 재개하지 않음, `paused`에서 `step`·`advance`·`flap`이 모델을 바꾸지 않음, 재개 첫 프레임 0초와 일시정지하지 않은 비행과 같은 결과, `ready`·`over`에서 일시정지·재개 무시, 시작 충격, `ready`·`over`에서 정지, 기둥마다 한 번 득점과 충돌 tick 무득점, 재시작 초기화
-- `tests/input.test.mjs`: 키 반복 무시, `keyup`·`blur`·탭 비활성 후 재입력, 버튼 `click`과 키 입력의 중복 방지, 충돌 중 누른 키로 재시작하지 않음, `P`·`Escape`의 반복·중복 `keydown` 무시, 탭 숨김 콜백. 실제 모델·프레임 시계·입력 바인딩을 연결해 일시정지 중 `Space`·`ArrowUp`·탭·포커스된 `계속` 버튼의 `Space`가 날갯짓·재개하지 않는지, `계속` 버튼의 클릭·탭·`Enter`가 한 번만 재개하는지, 탭 숨김·표시와 `ready`·`over`의 무시를 확인. `KeyM`의 누름당 한 번 전환, 반복·중복·modifier 무시, `blur`·탭 숨김 후 재입력, 네 상태에서의 전환과 모델 불변, `unbind`, `onMute` 없는 호출자
+- `tests/input.test.mjs`: 키 반복 무시, `keyup`·`blur`·탭 비활성 후 재입력, 버튼 `click`과 키 입력의 중복 방지, 충돌 중 누른 키로 재시작하지 않음, `P`·`Escape`의 반복·중복 `keydown` 무시, 탭 숨김 콜백. 실제 모델·프레임 시계·입력 바인딩을 연결해 일시정지 중 `Space`·`ArrowUp`·탭·포커스된 `계속` 버튼의 `Space`가 날갯짓·재개하지 않는지, `계속` 버튼의 클릭·탭·`Enter`가 한 번만 재개하는지, 탭 숨김·표시와 `ready`·`over`의 무시를 확인. `KeyM`의 누름당 한 번 전환, 반복·중복·modifier 무시, `blur`·탭 숨김 후 재입력, 네 상태에서의 전환과 모델 불변, `unbind`, `onMute` 없는 호출자 결과 카드의 seed 링크(또는 그 안의 글자) 위 포인터 입력이 날갯짓·재시작을 하지 않고, 링크에 포커스한 상태의 `Space`는 기존처럼 다시 시작하고 `Enter`는 막지 않음.
 - `tests/audio.test.mjs`: 가짜 `AudioContext`로 입력 전 컨텍스트 미생성, 세 효과음의 구별·envelope·정리, `silence`의 진행 중·예약 소리 차단, 음소거 저장·복원, 정상 재개 대기 중 효과음의 1회 재생(재개가 오래 걸려도 재생), 음소거·`silence`·거부로 취소된 대기 효과음의 폐기(늦은 `resume` 완료 경합), API 부재·생성 실패·`closed`·`resume` 거부, 저장소 차단 시 메모리 상태
 - `tests/audio-events.test.mjs`: 실제 `createGame`으로 시작·날갯짓·거절된 입력, 한 프레임의 여러 득점, 득점 후 같은 프레임 충돌, 점수 초기화·반복 프레임·일시정지의 무음, suspended 컨텍스트의 정상 재개(0·50·301·5000ms)에서 첫 시작·재시작 날갯짓 1회와 취소된 재시작의 무음, 같은 seed·tick 입력에서 소리 켬·음소거·사용 불가의 모델 결과 동일
+- `tests/flight-history.test.mjs`: 최신순 추가, 6번째 비행에서 가장 오래된 기록 제거(최대 5개), 입력 배열 불변, null·깨진 JSON·배열이 아닌 값·잘못된 항목·음수·소수·범위 밖 seed·문자열 HTML·6개 이상 저장값의 복구, `getStorage`·`getItem`·`setItem` 예외에서 빈 기록과 무예외, 저장이 `flappyBatRecent`에만 쓰고 `flappyBatBest`·`flappyBatMuted`를 바꾸지 않음, seed 링크가 다른 query를 유지함
 - `tests/fake-audio.mjs`: 테스트용 가짜 `AudioContext`·저장소(테스트 파일이 아님)
 - `tests/view.test.mjs`: 화면 비율마다 카메라 시야가 박쥐 뒤쪽 여유, 박쥐 앞 9.5 단위(다가오는 기둥을 판단하는 구간), 비행 높이 범위를 모두 포함하고 박쥐가 화면 왼쪽에 있는지, 동굴 바닥·천장이 화면 안에 있는지 확인
 - `tests/collision.test.mjs`: 몸통 윤곽과 메시 표본의 일치, 틈·바닥·천장·기둥 옆면·잘린 모서리에 닿기 직전(1e-6 여유)·정확히 닿음·겹침, 기둥 폭보다 긴 이동과 큰 수직 이동의 충돌 검출, 닿지 않는 근접 통과, 지연 프레임 안의 충돌에서 `over` 한 번·이후 무득점·닿은 자세에서 정지
