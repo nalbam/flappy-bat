@@ -399,3 +399,54 @@ test('real game: KeyM toggles once per press in ready, running, paused and over 
   pressM();
   assert.deepEqual(toggles, [['ready', true], ['running', false], ['paused', true], ['over', false]]);
 });
+
+// A result card seed link: `closest('a[href]')` finds the link from the link itself or a node inside it.
+class FakeLink extends FakeElement {
+  closest(selector) { return selector === 'a[href]' ? this : null; }
+}
+class FakeLinkText extends FakeElement {
+  constructor(link) { super(); this.link = link; }
+  closest(selector) { return selector === 'a[href]' ? this.link : null; }
+}
+
+test('pointer: a press on a stage link only follows the link, also in the over state', () => {
+  const win = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { hidden: false, activeElement: null });
+  const link = new FakeLink();
+  const linkText = new FakeLinkText(link);
+  link.children.push(linkText);
+  const plain = new FakeElement();
+  plain.closest = () => null; // a panel node that is not inside a link
+  const restartButton = new FakeElement();
+  const canvas = new FakeElement();
+  const stage = new FakeElement([canvas, new FakeElement([plain, link, restartButton])]);
+  const game = createGame({ seed: 7 });
+  const clock = createFrameClock();
+  const crash = () => { startRun(game, clock); while (game.state === 'running') game.advance(0.1); };
+  crash(); // the result card with its seed links is shown only after a crash
+  assert.equal(game.state, 'over');
+  const calls = [];
+  bindInput({
+    win, doc, stage,
+    onFlap: () => { calls.push('flap'); if (game.state === 'over') { game.reset(); startRun(game, clock); } }, // main.js: setReady() then start()
+    buttons: [[restartButton, () => calls.push('restart')]],
+  });
+
+  const press = fire(stage, 'pointerdown', { button: 0, target: link });
+  fire(stage, 'pointerdown', { button: 0, target: linkText });
+  assert.deepEqual(calls, [], 'a press on a link or inside it does not flap');
+  assert.equal(game.state, 'over', 'the link press does not restart the flight');
+  assert.equal(press.defaultPrevented, false, 'the browser still follows the link');
+
+  doc.activeElement = link;
+  assert.equal(keydown(win, 'Space').defaultPrevented, true, 'Space on a focused link is a flap key, not a link activation');
+  assert.equal(fire(win, 'keydown', { code: 'Enter', key: 'Enter', repeat: false }).defaultPrevented, false, 'Enter on a focused link opens it');
+  assert.deepEqual(calls, ['flap'], 'Space restarts as before');
+  assert.equal(game.state, 'running');
+
+  game.reset();
+  crash();
+  fire(stage, 'pointerdown', { button: 0, target: plain });
+  fire(stage, 'pointerdown', { button: 0, target: canvas });
+  assert.deepEqual(calls, ['flap', 'flap', 'flap'], 'other stage presses still flap and restart');
+});

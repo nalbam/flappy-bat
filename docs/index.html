@@ -26,6 +26,10 @@
         <h2 id="pauseTitle" class="paused-only">일시정지</h2>
         <p class="lead paused-only"><kbd>P</kbd> 또는 <kbd>Esc</kbd>를 누르거나<br /><span class="nowrap">계속 버튼으로 이어서 납니다.</span></p>
         <p id="message" class="result" role="status"></p>
+        <section class="recent over-only" aria-labelledby="recentTitle">
+          <h3 id="recentTitle" class="recent-title">최근 비행</h3>
+          <ol id="recentList" class="recent-list"></ol>
+        </section>
         <button id="startButton" class="ready-only" type="button">날아오르기 <kbd>SPACE</kbd></button>
         <button id="restartButton" class="over-only" type="button"><span aria-hidden="true">↻</span> 다시 시작 <kbd>SPACE</kbd></button>
         <button id="continueButton" class="paused-only" type="button"><span aria-hidden="true">▶</span> 계속 <kbd>P · ESC</kbd></button>

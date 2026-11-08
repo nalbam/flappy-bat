@@ -1,0 +1,43 @@
+== 1280x720 http://127.0.0.1:8765/docs/, storage cleared, then flappyBatBest=3 and flappyBatMuted=0
+flight 1: score 0, seed 3276548625
+  card: CRASH // 충돌 | 통과한 기둥 | 0 | 최고 기록 3 | SEED 3276548625 | 최근 비행 | 0점 | SEED 3276548625 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=3276548625"]
+  localStorage before: {"flappyBatRecent":null,"flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+flight 2: score 0, seed 2975180139
+  card: CRASH // 충돌 | 통과한 기둥 | 0 | 최고 기록 3 | SEED 2975180139 | 최근 비행 | 0점 | SEED 2975180139 | 0점 | SEED 3276548625 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=2975180139","?seed=3276548625"]
+  localStorage before: {"flappyBatRecent":"[{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+flight 3: score 0, seed 4159246048
+  card: CRASH // 충돌 | 통과한 기둥 | 0 | 최고 기록 3 | SEED 4159246048 | 최근 비행 | 0점 | SEED 4159246048 | 0점 | SEED 2975180139 | 0점 | SEED 3276548625 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=4159246048","?seed=2975180139","?seed=3276548625"]
+  localStorage before: {"flappyBatRecent":"[{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  card list (newest first): ["0점 SEED 4159246048","0점 SEED 2975180139","0점 SEED 3276548625"]; flights newest first: ["0점 SEED 4159246048","0점 SEED 2975180139","0점 SEED 3276548625"]
+  links and restart button inside 1280x720: true
+== reload http://127.0.0.1:8765/docs/
+  phase after reload: ready, localStorage: {"flappyBatRecent":"[{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+flight 4 (after reload): score 0, seed 1636174534
+  card: CRASH // 충돌 | 통과한 기둥 | 0 | 최고 기록 3 | SEED 1636174534 | 최근 비행 | 0점 | SEED 1636174534 | 0점 | SEED 4159246048 | 0점 | SEED 2975180139 | 0점 | SEED 3276548625 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=1636174534","?seed=4159246048","?seed=2975180139","?seed=3276548625"]
+  localStorage before: {"flappyBatRecent":"[{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  list length: 4
+== click on ?seed=1636174534: url http://127.0.0.1:8765/docs/?seed=1636174534, phase ready, records 4 (unchanged: true)
+  flight 5 on the link: seed 1636174534 (link seed 1636174534, same: true), score 0
+  console errors/warnings/pageerrors 1280x720: none
+== phone-390x844 flight: score 1, seed 20261031
+  card: CRASH // 충돌 | 통과한 기둥 | 1 | 최고 기록 3 | SEED 20261031 | 최근 비행 | 1점 | SEED 20261031 | 0점 | SEED 1636174534 | 0점 | SEED 1636174534 | 0점 | SEED 4159246048 | 0점 | SEED 2975180139 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=20261031","?seed=1636174534","?seed=1636174534","?seed=4159246048","?seed=2975180139"]
+  localStorage before: {"flappyBatRecent":"[{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139},{\"score\":0,\"seed\":3276548625}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":1,\"seed\":20261031},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  list length 5, links and restart button inside 390x844: true
+  console errors/warnings/pageerrors phone-390x844: none
+== landscape-844x390 flight: score 1, seed 20261031
+  card: CRASH // 충돌 | 통과한 기둥 | 1 | 최고 기록 3 | SEED 20261031 | 최근 비행 | 1점 | SEED 20261031 | 1점 | SEED 20261031 | 0점 | SEED 1636174534 | 0점 | SEED 1636174534 | 0점 | SEED 4159246048 | ↻ 다시 시작 | SPACE | Space · ↑ · 클릭 · 탭으로도 바로 다시 날아요 · M으로 소리 켜기/끄기
+  link hrefs: ["?seed=20261031","?seed=20261031","?seed=1636174534","?seed=1636174534","?seed=4159246048"]
+  localStorage before: {"flappyBatRecent":"[{\"score\":1,\"seed\":20261031},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":4159246048},{\"score\":0,\"seed\":2975180139}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  localStorage after:  {"flappyBatRecent":"[{\"score\":1,\"seed\":20261031},{\"score\":1,\"seed\":20261031},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":1636174534},{\"score\":0,\"seed\":4159246048}]","flappyBatBest":"3","flappyBatMuted":"0"}
+  list length 5, links and restart button inside 844x390: true
+  console errors/warnings/pageerrors landscape-844x390: none

@@ -19,8 +19,11 @@ export const MUTE_KEYS = Object.freeze(['KeyM']);
  * - Ctrl, Alt or Meta with a flap, pause or mute key is a browser shortcut and is left alone.
  * - Window blur and a hidden tab forget held keys, because their keyup may never arrive.
  *   A hidden tab also calls `onHidden`; becoming visible again calls nothing.
- * - A primary pointer press anywhere on `stage` calls `onFlap`, except on a bound button.
- *   Buttons act only through their `click` event, which also covers Enter on a focused button.
+ * - A primary pointer press anywhere on `stage` calls `onFlap`, except on a bound button or a
+ *   link (`a[href]`, also a node inside one). Buttons act only through their `click` event, which
+ *   also covers Enter on a focused button. A link only navigates, so a tap on a result card seed
+ *   link opens it without starting a flight first. Space on a focused link is still a flap key
+ *   (default prevented, so it never follows the link); Enter follows it as usual.
  *   Enter auto-repeat on a focused button is cancelled so holding Enter clicks once.
  *
  * @param {object} options
@@ -40,6 +43,10 @@ export function bindInput({ win, doc, stage, buttons = [], onFlap, onPause = () 
   const held = new Set();
   const isBoundButton = (node) => buttons.some(([button]) => button === node);
   const isInsideButton = (node) => buttons.some(([button]) => button.contains(node));
+  const isInsideLink = (node) => {
+    const link = typeof node?.closest === 'function' ? node.closest('a[href]') : null;
+    return link !== null && stage.contains(link);
+  };
   const hasShortcutModifier = (event) => event.ctrlKey || event.altKey || event.metaKey;
 
   const actionFor = (code) => (FLAP_KEYS.includes(code) ? onFlap
@@ -73,7 +80,7 @@ export function bindInput({ win, doc, stage, buttons = [], onFlap, onPause = () 
   };
 
   function onPointerDown(event) {
-    if (event.button !== 0 || isInsideButton(event.target)) return;
+    if (event.button !== 0 || isInsideButton(event.target) || isInsideLink(event.target)) return;
     onFlap();
   }
 
